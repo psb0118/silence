@@ -43,7 +43,7 @@ export class Monster {
 
     this.onCatch = null;
 
-    this.grid = new Grid(world, 1.4, this.radius + 0.2);
+    this.grid = new Grid(world, 2.0, this.radius + 0.2);
     this._buildModel();
     this._syncModel();
   }

@@ -10,7 +10,7 @@ import { UI } from "./ui.js";
 
 /* ================= 설정 ================= */
 const settings = Object.assign(
-  { sensitivity: 1, invertY: false, volume: 0.8, micSens: 1, quality: "medium" },
+  { sensitivity: 1, invertY: false, volume: 0.8, micSens: 1, quality: "low" },
   JSON.parse(localStorage.getItem("silence.settings") || "{}")
 );
 function saveSettings() {
@@ -25,13 +25,43 @@ const renderer = new THREE.WebGLRenderer({
   powerPreference: "high-performance",
   preserveDrawingBuffer: CAPTURE
 });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, QUALITY[settings.quality].pixelRatio));
-renderer.setSize(window.innerWidth, window.innerHeight);
+const MAX_PIXEL_RATIO = 1.5;
+const applyPixelRatio = (pr) => {
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, pr, MAX_PIXEL_RATIO));
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+};
+applyPixelRatio(QUALITY[settings.quality].pixelRatio);
 renderer.shadowMap.enabled = QUALITY[settings.quality].shadows;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.NeutralToneMapping;
 renderer.toneMappingExposure = 1.5;
 app.appendChild(renderer.domElement);
+
+// 그래픽 컨텍스트 손실(검은 화면/크래시) 대응
+renderer.domElement.addEventListener("webglcontextlost", (e) => {
+  e.preventDefault();
+  showFatal("그래픽 컨텍스트가 손실되었습니다. 페이지를 새로고침(Ctrl+F5)하면 복구됩니다.");
+}, false);
+renderer.domElement.addEventListener("webglcontextrestored", () => {
+  applyPixelRatio(1.0);
+  if (world) world.setShadows(false);
+  renderer.shadowMap.enabled = false;
+}, false);
+
+// 검은 화면 대신 오류를 보여준다
+function showFatal(msg) {
+  let el = document.getElementById("fatal");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "fatal";
+    el.style.cssText = "position:fixed;inset:0;z-index:99999;background:#0a0f18;color:#ffc0c0;" +
+      "font:13px/1.6 'Consolas',monospace;padding:28px;white-space:pre-wrap;overflow:auto";
+    document.body.appendChild(el);
+  }
+  el.textContent = "게임을 계속할 수 없습니다.\n\n" + msg + "\n\n페이지를 새로고침(Ctrl+F5)해 주세요.";
+}
+window.addEventListener("error", (e) => showFatal((e.message || "오류") + "\n" + (e.filename || "") + ":" + (e.lineno || "")));
+window.addEventListener("unhandledrejection", (e) => showFatal("" + ((e.reason && e.reason.message) || e.reason || "알 수 없는 오류")));
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.05, 500);
@@ -417,6 +447,7 @@ function loop() {
     if (shadowTimer <= 0) { scene.remove(shadowSprite); shadowSprite.material.map.dispose(); shadowSprite.material.dispose(); shadowSprite = null; }
   }
 
+  perfTick(dt);
   world.update(dt, game.elapsed);
   ui.update(dt);
 
@@ -431,6 +462,27 @@ function loop() {
 }
 
 let fear = 0;
+
+/* ================= 성능 자동 조절 ================= */
+let perfAcc = 0, perfFrames = 0, perfLevel = 0;
+function perfTick(dt) {
+  perfAcc += dt; perfFrames++;
+  if (perfAcc < 1.5) return;
+  const fps = perfFrames / perfAcc;
+  perfAcc = 0; perfFrames = 0;
+  if (fps < 28 && perfLevel < 2) {
+    perfLevel++;
+    if (perfLevel === 1) {
+      renderer.shadowMap.enabled = false;
+      world.setShadows(false);
+      applyPixelRatio(1.0);
+      ui.toast("원활한 플레이를 위해 그래픽을 낮췄습니다", 2600);
+    } else {
+      if (world.grass) world.grass.visible = false;
+      ui.toast("원활한 플레이를 위해 잔디를 숨겼습니다", 2600);
+    }
+  }
+}
 
 /* ================= 리사이즈 ================= */
 window.addEventListener("resize", () => {

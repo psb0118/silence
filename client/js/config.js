@@ -58,7 +58,7 @@ export const CONFIG = {
     searchRadius: 16,
     loseTime: 4.2,             // 추격 중 소리 끊기면 마지막 지점으로
     stuckTime: 1.1,
-    repathInterval: 0.22
+    repathInterval: 0.32
   },
 
   interaction: {
@@ -76,7 +76,7 @@ export const CONFIG = {
 };
 
 export const QUALITY = {
-  low:    { grass: 9000,  pixelRatio: 1.0, shadows: false, grassRadius: 46 },
-  medium: { grass: 20000, pixelRatio: 1.25, shadows: true,  grassRadius: 56 },
-  high:   { grass: 34000, pixelRatio: 1.75, shadows: true,  grassRadius: 66 }
+  low:    { grass: 6000,  pixelRatio: 1.0, shadows: false, grassRadius: 42 },
+  medium: { grass: 12000, pixelRatio: 1.0, shadows: true,  grassRadius: 50 },
+  high:   { grass: 20000, pixelRatio: 1.5, shadows: true,  grassRadius: 58 }
 };
