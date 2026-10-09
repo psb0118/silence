@@ -44,7 +44,7 @@ export const CONFIG = {
 
   // 몬스터
   monster: {
-    roamSpeed: 1.9,
+    roamSpeed: 2.5,
     investigateSpeed: 4.2,
     chaseSpeed: 9.2,
     searchSpeed: 2.6,

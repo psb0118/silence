@@ -348,32 +348,24 @@ export class World {
       this.scene.add(wall);
       this.boxes.push({ minX: x - ww / 2, maxX: x + ww / 2, minZ: z - dd / 2, maxZ: z + dd / 2 });
     };
-    // 위/아래 변 (x방향 벽)
+    // 문(출입구)을 지정된 벽 가운데에 gap 만큼 비워서 만든다
     const gap = 1.6;
-    if (doorSide === "z-" ) {
-      addWall(cx, cz - d / 2, w, t);
-    } else {
-      addWall(cx, cz - d / 2, w, t);
-    }
-    if (doorSide === "z+") {
-      addWall(cx, cz + d / 2, w, t);
-    } else {
-      addWall(cx, cz + d / 2, w, t);
-    }
-    // 좌/우 변 (z방향 벽) — 한쪽에 문
-    const half = w / 2 - gap / 2;
-    if (doorSide === "x+") {
-      addWall(cx - w / 2, cz, t, d);
-      addWall(cx + w / 2, cz - (d / 2 - gap / 2), t, gap);
-      addWall(cx + w / 2, cz + (d / 2 - gap / 2), t, gap);
-    } else if (doorSide === "x-") {
-      addWall(cx + w / 2, cz, t, d);
-      addWall(cx - w / 2, cz - (d / 2 - gap / 2), t, gap);
-      addWall(cx - w / 2, cz + (d / 2 - gap / 2), t, gap);
-    } else {
-      addWall(cx - w / 2, cz, t, d);
-      addWall(cx + w / 2, cz, t, d);
-    }
+    const segZ = (wallX) => { // z방향 벽(x = wallX)에 문
+      addWall(wallX, cz - (d / 2 - gap / 2), t, gap);
+      addWall(wallX, cz + (d / 2 - gap / 2), t, gap);
+    };
+    const segX = (wallZ) => { // x방향 벽(z = wallZ)에 문
+      addWall(cx - (w / 2 - gap / 2), wallZ, gap, t);
+      addWall(cx + (w / 2 - gap / 2), wallZ, gap, t);
+    };
+    // 북쪽 벽 (z = cz - d/2)
+    if (doorSide === "z-") segX(cx, cz - d / 2); else addWall(cx, cz - d / 2, w, t);
+    // 남쪽 벽 (z = cz + d/2)
+    if (doorSide === "z+") segX(cx, cz + d / 2); else addWall(cx, cz + d / 2, w, t);
+    // 서쪽 벽 (x = cx - w/2)
+    if (doorSide === "x-") segZ(cx - w / 2); else addWall(cx - w / 2, cz, t, d);
+    // 동쪽 벽 (x = cx + w/2)
+    if (doorSide === "x+") segZ(cx + w / 2); else addWall(cx + w / 2, cz, t, d);
     // 지붕
     const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.25, d + 0.4), roofMat);
     roof.position.set(cx, baseY + h - 0.3, cz);

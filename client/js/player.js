@@ -137,9 +137,9 @@ export class Player {
     const len = Math.hypot(fx, fz);
     if (len > 0) { fx /= len; fz /= len; }
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
-    // yaw 기준 로컬→월드
-    const wishX = fx * cos - fz * sin;
-    const wishZ = fx * sin + fz * cos;
+    // yaw 기준 로컬→월드 (W=정면, A=좌, S=뒤, D=우)
+    const wishX = fx * cos + fz * sin;
+    const wishZ = -fx * sin + fz * cos;
 
     const control = this.onGround ? 1 : CONFIG.airControl;
     const accel = CONFIG.accel * control;

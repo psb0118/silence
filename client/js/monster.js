@@ -13,8 +13,8 @@ export class Monster {
     this.noise = noise;
 
     this.radius = 0.55;
-    this.x = -42;
-    this.z = -28;
+    this.x = -14;
+    this.z = 8;
     this.y = world.heightAt(this.x, this.z);
     this.yaw = 0;
     this.animPhase = 0;
@@ -52,9 +52,12 @@ export class Monster {
   _buildModel() {
     const root = new THREE.Group();
 
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x07090b, roughness: 0.92, metalness: 0.02 });
-    const clawMat = new THREE.MeshStandardMaterial({ color: 0x1a1d20, roughness: 0.5, metalness: 0.6 });
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff3b2b });
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0x787e88, roughness: 0.85, metalness: 0.05,
+      emissive: 0x14181f, emissiveIntensity: 0.8
+    });
+    const clawMat = new THREE.MeshStandardMaterial({ color: 0x2c313a, roughness: 0.5, metalness: 0.6 });
+    const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff7a4a, emissive: 0xff3418, emissiveIntensity: 3.2, roughness: 0.4 });
 
     const seg = (len, r1, r2) => {
       const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, 7), bodyMat);
@@ -83,11 +86,24 @@ export class Monster {
     skull.castShadow = true;
     head.add(skull);
     // 눈 (어둠 속에서 빛남)
-    for (const ex of [-0.07, 0.07]) {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 8), eyeMat);
-      eye.position.set(ex, 0.15, 0.13);
+    for (const ex of [-0.075, 0.075]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 10), eyeMat);
+      eye.position.set(ex, 0.15, 0.14);
       head.add(eye);
     }
+    // 어둠 속에서도 눈이 보이도록 붉은 발광 스프라이트
+    const eyeGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeEyeGlow(), transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, opacity: 0.9, fog: false
+    }));
+    eyeGlow.scale.set(0.8, 0.55, 1);
+    eyeGlow.position.set(0, 0.15, 0.17);
+    head.add(eyeGlow);
+    this.eyeGlow = eyeGlow;
+    // 머리에 붉은 광원 → 어둠 속에서도 실루엣이 드러남
+    this.eyeLight = new THREE.PointLight(0xff3a1e, 16, 16, 1.6);
+    this.eyeLight.position.set(0, 0.14, 0.16);
+    head.add(this.eyeLight);
     this.head = head;
     this.torso.add(head);
 
@@ -215,6 +231,7 @@ export class Monster {
   /* ================= 업데이트 ================= */
   update(dt, player) {
     this.time += dt;
+    this._playerRef = player;
     const cfg = CONFIG.monster;
     this._repathTimer -= dt;
 
@@ -324,11 +341,21 @@ export class Monster {
   }
 
   _pickRoamTarget() {
-    for (let tries = 0; tries < 12; tries++) {
-      const a = rand(0, Math.PI * 2);
-      const r = rand(6, CONFIG.worldRadius - 8);
-      const x = Math.cos(a) * r;
-      const z = Math.sin(a) * r;
+    const p = this._playerRef;
+    for (let tries = 0; tries < 16; tries++) {
+      let x, z;
+      if (p && Math.random() < 0.5) {
+        // 절반은 플레이어 주변으로 배회 → 마주칠 확률을 높임
+        const a = rand(0, Math.PI * 2);
+        const r = rand(12, 26);
+        x = p.x + Math.cos(a) * r;
+        z = p.z + Math.sin(a) * r;
+      } else {
+        const a = rand(0, Math.PI * 2);
+        const r = rand(6, CONFIG.worldRadius - 8);
+        x = Math.cos(a) * r;
+        z = Math.sin(a) * r;
+      }
       if (!this.world.isBlockedPoint(x, z, this.radius)) {
         this.target = { x, z };
         this._path = [];
@@ -532,7 +559,7 @@ export class Monster {
   }
 
   reset() {
-    this.x = -42; this.z = -28;
+    this.x = -14; this.z = 8;
     this.y = this.world.heightAt(this.x, this.z);
     this.yaw = 0;
     this.state = STATE.ROAM;
@@ -632,4 +659,20 @@ class MinHeap {
     const ti = this.ids[a]; this.ids[a] = this.ids[b]; this.ids[b] = ti;
     const tp = this.pri[a]; this.pri[a] = this.pri[b]; this.pri[b] = tp;
   }
+}
+
+/* ================= 발광 텍스처 ================= */
+function makeEyeGlow() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const ctx = c.getContext("2d");
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, "rgba(255,120,70,1)");
+  g.addColorStop(0.3, "rgba(255,60,28,0.55)");
+  g.addColorStop(1, "rgba(255,40,20,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
