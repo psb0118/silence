@@ -133,6 +133,23 @@ html, body {
   transition: width .1s linear, background .2s;
 }
 
+/* 손전등 배터리 */
+#battery-wrap {
+  position: absolute; left: 50%; top: 74.5%;
+  width: min(240px, 36vw); transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px;
+  opacity: .85;
+}
+#battery-bar {
+  flex: 1; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.07);
+  overflow: hidden;
+}
+#battery-fill {
+  height: 100%; width: 100%; border-radius: 3px;
+  background: linear-gradient(90deg, #8a7a3a, #f5e06e);
+  transition: width .1s linear, background .2s;
+}
+
 /* 목표 */
 #objective {
   position: absolute; left: 20px; top: 18px;
@@ -164,6 +181,9 @@ html, body {
 .chip.on .dot { background: var(--green); color: var(--green); }
 .chip.off .dot { background: #333b44; color: #333b44; }
 .chip.warn .dot { background: var(--orange); color: var(--orange); }
+.chip.safe .dot { background: var(--green); color: var(--green); }
+.chip.safe b { color: var(--green); }
+.chip.safe { border-color: rgba(110,231,168,0.35); }
 .chip b { color: #dbe4ec; }
 .chip em { color: #66717c; font-style: normal; font-size: 10px; }
 

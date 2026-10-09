@@ -7,6 +7,9 @@ export class UI {
     this.noisePct = $("#noise-pct");
     this.noiseWrap = $("#noise-wrap");
     this.staminaFill = $("#stamina-fill");
+    this.batteryFill = $("#battery-fill");
+    this.safeZoneChip = $("#safezone-status");
+    this.safeZoneText = $("#safezone-text");
     this.objMain = $("#obj-main");
     this.objSub = $("#obj-sub");
     this.fuseCount = $("#fuse-count");
@@ -70,6 +73,21 @@ export class UI {
     this.staminaFill.style.background = ratio < 0.25
       ? "linear-gradient(90deg,#7a3a3a,#d86a6a)"
       : "linear-gradient(90deg,#3f6b8a,#7fb2d8)";
+  }
+
+  setBattery(ratio) {
+    this.batteryFill.style.width = Math.round(Math.max(0, Math.min(1, ratio)) * 100) + "%";
+    this.batteryFill.style.background = ratio < 0.22
+      ? "linear-gradient(90deg,#8a3a3a,#e0604a)"
+      : ratio < 0.5
+        ? "linear-gradient(90deg,#8a7a3a,#f5d76e)"
+        : "linear-gradient(90deg,#8a7a3a,#f5e06e)";
+  }
+
+  setSafeZone(inSafe, charging) {
+    this.safeZoneChip.classList.toggle("hidden", !inSafe);
+    this.safeZoneChip.classList.toggle("safe", inSafe);
+    this.safeZoneText.textContent = inSafe ? (charging ? "충전 중" : "안전") : "밖";
   }
 
   setObjective(main, collected, total, nearestDist) {

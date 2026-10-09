@@ -2,6 +2,7 @@ export const CONFIG = {
   worldRadius: 64,
   eyeHeight: 1.68,
   crouchEye: 1.05,
+  hideEye: 1.18,
   crouchLerp: 8,
 
   playerRadius: 0.42,
@@ -14,22 +15,36 @@ export const CONFIG = {
   jumpVel: 6.3,
   gravity: 20,
 
-  // 스태미나
-  staminaMax: 5.0,
-  staminaDrain: 1.0,
-  staminaRegen: 0.62,
-  staminaRegenDelay: 1.1,
+  // 스태미나 (달리기 시간 제한)
+  stamina: {
+    max: 6.0,
+    drain: 1.0,        // 달리는 동안 초당 소모
+    regen: 0.78,       // 회복 속도
+    regenDelay: 1.0,   // 소모 후 회복 시작까지 지연
+    minStart: 0.14,    // 이 비율 이하로는 달리기 시작 불가
+    jumpCost: 0.35,    // 점프 소모
+    low: 0.25          // 위험 표시 임계
+  },
+
+  // 손전등 배터리
+  battery: {
+    max: 100,
+    drain: 1.5,        // 켜져 있을 때 초당 소모 (약 66초)
+    charge: 24,        // 안전지대 충전 속도 (초당)
+    minOn: 8,          // 이 이하로 떨어지면 다시 켤 수 없음
+    low: 22            // 경고 임계
+  },
 
   // 노이즈 세기 (0..1)
   noise: {
-    crouch: 0.16,
+    crouch: 0.15,
     walk: 0.42,
-    sprint: 0.92,
+    sprint: 0.95,
     jump: 0.38,
     landMin: 0.5,
     landMax: 1.0,
     mic: 1.0,
-    stepImpulse: { crouch: 0.12, walk: 0.28, sprint: 0.55 },
+    stepImpulse: { crouch: 0.1, walk: 0.28, sprint: 0.58 },
     attack: 12,    // 소리 상승 속도 (초당 지수)
     release: 3.2,  // 소리 감쇠 속도
     impulseDecay: 2.6,
@@ -37,41 +52,68 @@ export const CONFIG = {
   },
 
   mic: {
-    threshold: 0.055,    // 이 이하 배경음은 무시
+    threshold: 0.055,
     gate: 0.02,
     smooth: 0.12
   },
 
   // 몬스터
   monster: {
-    roamSpeed: 2.5,
-    investigateSpeed: 4.2,
-    chaseSpeed: 9.2,
-    searchSpeed: 2.6,
-    turnLerp: 5.5,
-    catchRadius: 1.35,
-    senseRadius: 4.2,          // 조용해도 아주 가까우면 감지
-    hearBase: 26,              // intensity=1 기준 청취 거리
-    hearMinIntensity: 0.12,    // 이 이하 소리는 무시
-    investigateTime: 7,
-    searchTime: 11,
-    searchRadius: 16,
-    loseTime: 4.2,             // 추격 중 소리 끊기면 마지막 지점으로
+    roamSpeed: 2.3,
+    investigateSpeed: 4.6,
+    stalkSpeed: 3.1,
+    searchSpeed: 2.8,
+    chaseSpeed: 6.1,       // 플레이어 달리기(6.6)의 약 92%
+    attackSpeed: 8.8,      // 돌진(짧은 순간)
+    turnLerp: 5.0,
+    catchRadius: 1.5,
+
+    senseRadius: 3.4,      // 조용해도 아주 가까우면 감지
+    sightBase: 15,         // 기본 시야 거리
+    sightChase: 19,        // 추격 중 시야
+    sightFov: 0.72,        // 시야각(코사인 임계) — 정면 위주
+
+    hearBase: 28,          // intensity=1 기준 청취 거리
+    hearMinIntensity: 0.12,
+
+    listenTime: 1.5,       // 소리 방향을 살피는 시간
+    investigateTime: 8,
+    stalkTime: 9,
+    searchTime: 13,
+    searchRadius: 18,
+    loseTime: 3.6,
+    suspicionTime: 12,     // 마지막 소음 기억 유지
+
+    attackRange: 2.5,
+    attackWindup: 0.5,     // 돌진 전 준비 동작
+    attackTime: 2.2,       // 공격 상태 제한 시간
+    recoverTime: 1.4,
+    inspectRadius: 2.8,    // 은신처 조사 반경
+    inspectTime: 2.2,      // 은신처 조사 시간
+
     stuckTime: 1.1,
-    repathInterval: 0.32
+    repathInterval: 0.30
   },
 
   interaction: {
     pickupRange: 2.6,
     pickupTime: 1.1,
-    gateRange: 3.2
+    gateRange: 3.4,
+    hideRange: 2.4,
+    hideTime: 0.55,
+    chargeRange: 3.0
   },
 
-  // 유도(도움) 설정
+  // 안전지대 (시작 대피소)
+  safeZone: {
+    minX: -9.5, maxX: 9.5,
+    minZ: 33.0, maxZ: 52.0
+  },
+
   assist: {
     showNearestDistance: true,
-    ambientScareMin: 26,   // 초
-    ambientScareMax: 62
+    ambientScareMin: 24,
+    ambientScareMax: 58
   }
 };
 

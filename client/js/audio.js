@@ -197,6 +197,96 @@ export class AudioEngine {
     src.start(t); src.stop(t + 0.8);
   }
 
+  // 무거운 발소리 (지면을 긁는 듯한 저음)
+  monsterStep(intensity, pan, proximity) {
+    if (!this.ctx) return;
+    const t = this.now;
+    const vol = clamp(proximity, 0, 1) ** 1.4 * (0.25 + intensity * 0.5);
+    if (vol < 0.01) return;
+    const p = this.ctx.createStereoPanner(); p.pan.value = clamp(pan, -1, 1);
+    // 저음 쿵
+    const osc = this.ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(88 + Math.random() * 18, t);
+    osc.frequency.exponentialRampToValueAtTime(42, t + 0.16);
+    const og = this.ctx.createGain();
+    this._env(og, t, vol, 0.006, 0.1, 0.09);
+    osc.connect(og).connect(p).connect(this.sfx);
+    osc.start(t); osc.stop(t + 0.35);
+    // 긁는 잡음
+    const src = this._noiseSource();
+    src.playbackRate.value = 0.55 + Math.random() * 0.2;
+    const bp = this.ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 320 + Math.random() * 200; bp.Q.value = 0.6;
+    const g = this.ctx.createGain();
+    this._env(g, t, vol * 0.7, 0.004, 0.11, 0.06);
+    src.connect(bp).connect(g).connect(p).connect(this.sfx);
+    src.start(t); src.stop(t + 0.3);
+  }
+
+  // 속삭임 — 거의 들리지 않을 듯한 음성 대역 잡음
+  whisper(proximity, pan) {
+    if (!this.ctx) return;
+    const t = this.now;
+    const vol = clamp(proximity, 0, 1) ** 1.8 * 0.12;
+    if (vol < 0.004) return;
+    const p = this.ctx.createStereoPanner(); p.pan.value = clamp(pan, -1, 1);
+    const words = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < words; i++) {
+      const st = t + i * (0.14 + Math.random() * 0.1);
+      const src = this._noiseSource();
+      src.playbackRate.value = 0.8 + Math.random() * 0.5;
+      const bp = this.ctx.createBiquadFilter(); bp.type = "bandpass";
+      bp.frequency.value = 900 + Math.random() * 1200; bp.Q.value = 4 + Math.random() * 5;
+      const g = this.ctx.createGain();
+      this._env(g, st, vol, 0.03, 0.08 + Math.random() * 0.06, 0.06);
+      src.connect(bp).connect(g).connect(p).connect(this.sfx);
+      src.start(st); src.stop(st + 0.3);
+    }
+  }
+
+  // 킁킁거리는 냄새 맡기
+  sniff(proximity, pan) {
+    if (!this.ctx) return;
+    const t = this.now;
+    const vol = clamp(proximity, 0, 1) ** 1.6 * 0.16;
+    if (vol < 0.005) return;
+    const p = this.ctx.createStereoPanner(); p.pan.value = clamp(pan, -1, 1);
+    for (let i = 0; i < 2; i++) {
+      const st = t + i * 0.13;
+      const src = this._noiseSource();
+      src.playbackRate.value = 1.1 + Math.random() * 0.3;
+      const bp = this.ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 560; bp.Q.value = 1.2;
+      const g = this.ctx.createGain();
+      this._env(g, st, vol, 0.012, 0.05, 0.05);
+      src.connect(bp).connect(g).connect(p).connect(this.sfx);
+      src.start(st); src.stop(st + 0.22);
+    }
+  }
+
+  // 공격 직전의 찢어지는 비명
+  attackScreech() {
+    if (!this.ctx) return;
+    const t = this.now;
+    for (let i = 0; i < 3; i++) {
+      const o = this.ctx.createOscillator();
+      o.type = i === 0 ? "sawtooth" : "square";
+      const f = 1100 + i * 480 + Math.random() * 240;
+      o.frequency.setValueAtTime(f, t);
+      o.frequency.exponentialRampToValueAtTime(f * 0.4, t + 0.4);
+      const g = this.ctx.createGain();
+      this._env(g, t, 0.2, 0.004, 0.34, 0.16);
+      const shaper = this.ctx.createWaveShaper(); shaper.curve = this._distCurve(11);
+      o.connect(shaper).connect(g).connect(this.sfx);
+      o.start(t); o.stop(t + 0.9);
+    }
+    const src = this._noiseSource();
+    const hp = this.ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 800;
+    const g = this.ctx.createGain();
+    this._env(g, t, 0.28, 0.003, 0.35, 0.2);
+    src.connect(hp).connect(g).connect(this.sfx);
+    src.start(t); src.stop(t + 1.0);
+  }
+
   chaseStinger() {
     if (!this.ctx) return;
     const t = this.now;

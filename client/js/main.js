@@ -73,6 +73,7 @@ const audio = new AudioEngine();
 const noise = new NoiseSystem(audio);
 const player = new Player(camera, world, noise, audio, settings);
 const monster = new Monster(scene, world, audio, noise);
+monster.onCatch = onCaught;
 const ui = new UI();
 
 noise.setMicSensitivity(settings.micSens);
@@ -88,6 +89,7 @@ const game = {
   collected: 0,
   interactHold: 0,
   interactTarget: null,
+  batteryWarned: false,
   lastMonsterState: STATE.ROAM
 };
 const FUSE_TOTAL = world.fuses.length;
@@ -116,6 +118,10 @@ function onKey(e, down) {
       if (down && !e.repeat && game.phase === "playing") toggleMic();
       break;
     case "KeyE":
+      if (down && !e.repeat && game.phase === "playing" && player.hidden) {
+        player.exitHide();
+        ui.hideInteract();
+      }
       break;
     case "Escape":
       if (game.phase === "playing") pause();
@@ -165,10 +171,12 @@ function startGame() {
   game.encounters = 0;
   game.exitPowered = false;
   game.collected = 0;
+  game.batteryWarned = false;
   game.ambientTimer = rand(CONFIG.assist.ambientScareMin, CONFIG.assist.ambientScareMax);
   player.respawn();
   monster.reset();
   resetFuses();
+  if (world.chargeStation) world.chargeStation.setActive(false);
   noise.level = 0;
   noise.impulse = 0;
   noise.events = [];
@@ -273,20 +281,42 @@ function updateObjectives(dt) {
   // 상호작용 대상 판정
   let target = null;
   let label = "";
+
+  // 은신처
+  let hideSpot = null, hd = Infinity;
+  if (!player.hidden) {
+    for (const s of world.hidingSpots) {
+      if (s.occupied) continue;
+      const d = Math.hypot(s.x - player.x, s.z - player.z);
+      if (d < hd) { hd = d; hideSpot = s; }
+    }
+    if (hideSpot && hd < CONFIG.interaction.hideRange) {
+      target = { type: "hide", hide: hideSpot };
+      label = hideSpot.type === "locker" ? "사물함에 숨기"
+        : hideSpot.type === "cabinet" ? "수납장에 숨기"
+        : hideSpot.type === "desk" ? "책상 밑에 숨기"
+        : hideSpot.type === "crawl" ? "기어들어 숨기"
+        : "숨기";
+    }
+  }
+
   if (nearest && nd < CONFIG.interaction.pickupRange) { target = { type: "fuse", fuse: nearest }; label = "퓨즈 줍기"; }
   const gd = Math.hypot(world.exit.x - player.x, world.exit.z - player.z);
   if (game.exitPowered && gd < CONFIG.interaction.gateRange) { target = { type: "gate" }; label = "철문 열고 탈출"; }
 
   const holdingE = !!eKeyDown;
   if (target && holdingE) {
-    if (!game.interactTarget || game.interactTarget.type !== target.type || game.interactTarget.fuse !== target.fuse) {
+    if (!game.interactTarget || game.interactTarget.type !== target.type || game.interactTarget.fuse !== target.fuse || game.interactTarget.hide !== target.hide) {
       game.interactHold = 0;
     }
     game.interactTarget = target;
-    const time = target.type === "fuse" ? CONFIG.interaction.pickupTime : 1.4;
+    const time = target.type === "fuse" ? CONFIG.interaction.pickupTime
+      : target.type === "hide" ? CONFIG.interaction.hideTime
+      : 1.4;
     game.interactHold += dt / time;
     if (game.interactHold >= 1) {
       if (target.type === "fuse") collectFuse(target.fuse);
+      else if (target.type === "hide") { player.enterHide(target.hide); noise.drainEvents(); }
       else winGame();
       game.interactHold = 0;
       game.interactTarget = null;
@@ -398,6 +428,18 @@ function loop() {
     noise.update(dt);
     monster.update(dt, player);
 
+    // 충전소 배터리 (안전지대에서만)
+    const cs = world.chargeStation;
+    player.charging = player.inSafeZone && !!cs &&
+      Math.hypot(cs.x - player.x, cs.z - player.z) < CONFIG.interaction.chargeRange &&
+      player.battery < CONFIG.battery.max;
+    if (cs) cs.setActive(player.charging);
+    if (player.batteryLow && !game.batteryWarned) {
+      game.batteryWarned = true;
+      ui.toast("배터리 부족 — 손전등이 곧 꺼집니다", 2600);
+    }
+    if (!player.batteryLow) game.batteryWarned = false;
+
     // 몬스터 조우 카운터
     if (monster.state === STATE.CHASE && game.lastMonsterState !== STATE.CHASE) game.encounters++;
     game.lastMonsterState = monster.state;
@@ -454,7 +496,9 @@ function loop() {
   // HUD 동기화
   if (game.phase === "playing" || game.phase === "paused") {
     ui.setNoise(noise.level);
-    ui.setStamina(player.stamina / CONFIG.staminaMax);
+    ui.setStamina(player.stamina / CONFIG.stamina.max);
+    ui.setBattery(player.battery / CONFIG.battery.max);
+    ui.setSafeZone(player.inSafeZone, player.charging);
     ui.setMic(noise.micState);
   }
 
