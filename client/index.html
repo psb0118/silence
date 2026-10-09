@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>SILENCE — 침묵의 숲</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🌲</text></svg>" />
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- ================= HUD ================= -->
+  <div id="hud" class="hidden">
+    <div id="vignette"></div>
+    <div id="fear-vignette"></div>
+    <div id="damage-flash"></div>
+
+    <!-- 중앙 크로스헤어 -->
+    <div id="crosshair">
+      <span class="ch-arm ch-t"></span>
+      <span class="ch-arm ch-b"></span>
+      <span class="ch-arm ch-l"></span>
+      <span class="ch-arm ch-r"></span>
+      <span class="ch-dot"></span>
+    </div>
+
+    <!-- 노이즈 미터 (화면 중앙보다 살짝 아래) -->
+    <div id="noise-wrap">
+      <div class="noise-head">
+        <span class="noise-icon" aria-hidden="true">
+          <i></i><i></i><i></i><i></i>
+        </span>
+        <span class="noise-label">NOISE</span>
+        <span id="noise-pct">0%</span>
+      </div>
+      <div id="noise-bar">
+        <div id="noise-fill"></div>
+        <div id="noise-threshold"></div>
+      </div>
+    </div>
+
+    <!-- 스태미나 -->
+    <div id="stamina-wrap">
+      <div class="stamina-icon">RUN</div>
+      <div id="stamina-bar"><div id="stamina-fill"></div></div>
+    </div>
+
+    <!-- 목표 / 상태 -->
+    <div id="objective">
+      <div id="obj-main">퓨즈를 찾아 전원을 복구하세요</div>
+      <div id="obj-sub">퓨즈 <b><span id="fuse-count">0</span>/<span id="fuse-total">5</span></b> · 가장 가까운 퓨즈 <b><span id="fuse-dist">--</span>m</b></div>
+    </div>
+
+    <!-- 좌하단: 장비 상태 -->
+    <div id="status-left">
+      <div id="flashlight-status" class="chip"><span class="dot"></span>손전등 <b id="flash-text">ON</b> <em>[F]</em></div>
+      <div id="mic-status" class="chip"><span class="dot"></span>마이크 <b id="mic-text">확인 중…</b> <em>[M]</em></div>
+    </div>
+
+    <!-- 상호작용 프롬프트 -->
+    <div id="interact" class="hidden">
+      <span class="key">E</span>
+      <span id="interact-text">줍기</span>
+      <div id="interact-progress"><div id="interact-fill"></div></div>
+    </div>
+
+    <!-- 단계 표시 (경계/위험) -->
+    <div id="alert-banner" class="hidden"></div>
+  </div>
+
+  <!-- ================= 시작 화면 ================= -->
+  <div id="start" class="overlay">
+    <div class="box">
+      <h1 class="title">SILENCE</h1>
+      <p class="subtitle">침묵의 숲 · 노이즈 생존 공포</p>
+      <p class="flavor">그것은 <b>소리</b>를 좇는다. 무엇을 하든, 조용히 해야 한다.</p>
+
+      <div class="cols">
+        <div class="col">
+          <h3>조작</h3>
+          <ul class="keys">
+            <li><span>WASD</span> 이동</li>
+            <li><span>Shift</span> 달리기 (소음↑)</li>
+            <li><span>Ctrl / C</span> 앉기 (소음↓)</li>
+            <li><span>Space</span> 점프</li>
+            <li><span>F</span> 손전등</li>
+            <li><span>E</span> 줍기 / 탈출</li>
+            <li><span>Esc</span> 일시정지</li>
+          </ul>
+        </div>
+        <div class="col">
+          <h3>생존</h3>
+          <ul class="rules">
+            <li>밤의 숲에 갇혔다. <b>퓨즈 5개</b>를 모아 <b>출구 철문</b>의 전원을 복구해 탈출하라.</li>
+            <li>괴물은 <b>소리</b>를 따라온다. 뛰거나 점프하면 멀리서도 들린다.</li>
+            <li>앉아서 걸으면 조용하다. <b>숨고, 멈추고, 기다려라.</b></li>
+            <li>마이크가 있으면 <b>실제 목소리도</b> 소음이 된다.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="mic-row">
+        <label class="switch">
+          <input type="checkbox" id="use-mic" checked />
+          <span class="slider"></span>
+        </label>
+        <span>마이크 사용 (허용하면 실제 목소리로 괴물을 유인합니다)</span>
+      </div>
+
+      <button id="btn-start" class="big-btn">숲으로 들어가기</button>
+      <p id="start-note" class="note"></p>
+    </div>
+  </div>
+
+  <!-- ================= 일시정지 ================= -->
+  <div id="pause" class="overlay hidden">
+    <div class="box small">
+      <h2>일시정지</h2>
+      <div class="setting">
+        <label>마우스 감도</label>
+        <input type="range" id="set-sens" min="0.3" max="2.5" step="0.05" value="1" />
+        <span id="set-sens-val">1.00x</span>
+      </div>
+      <div class="setting">
+        <label>세로 반전</label>
+        <label class="switch"><input type="checkbox" id="set-invy" /><span class="slider"></span></label>
+      </div>
+      <div class="setting">
+        <label>마스터 볼륨</label>
+        <input type="range" id="set-vol" min="0" max="1" step="0.05" value="0.8" />
+        <span id="set-vol-val">80%</span>
+      </div>
+      <div class="setting">
+        <label>마이크 감도</label>
+        <input type="range" id="set-micsens" min="0.2" max="3" step="0.1" value="1" />
+        <span id="set-micsens-val">1.0x</span>
+      </div>
+      <div class="setting">
+        <label>화질</label>
+        <select id="set-quality">
+          <option value="low">낮음 (그림자 끔)</option>
+          <option value="medium" selected>보통</option>
+          <option value="high">높음</option>
+        </select>
+      </div>
+      <div class="pause-actions">
+        <button id="btn-resume" class="big-btn">계속하기</button>
+        <button id="btn-quit" class="ghost-btn">메뉴로</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 점프스케어 ================= -->
+  <div id="jumpscare" class="hidden">
+    <canvas id="scare-canvas" width="1024" height="1024"></canvas>
+  </div>
+
+  <!-- ================= 사망 ================= -->
+  <div id="death" class="overlay hidden dark">
+    <div class="box small">
+      <h2 class="dead">너는 잡혔다.</h2>
+      <p class="flavor">그것이 너의 숨소리를 들었다.</p>
+      <div class="death-stats">
+        <div><span>생존 시간</span><b id="stat-time">0:00</b></div>
+        <div><span>모은 퓨즈</span><b id="stat-fuse">0</b></div>
+      </div>
+      <button id="btn-respawn" class="big-btn">다시 숲으로</button>
+    </div>
+  </div>
+
+  <!-- ================= 탈출 성공 ================= -->
+  <div id="win" class="overlay hidden">
+    <div class="box small">
+      <h2 class="win">탈출 성공</h2>
+      <p class="flavor">철문이 닫히고, 숲이 다시 조용해진다. …정말로?</p>
+      <div class="death-stats">
+        <div><span>클리어 시간</span><b id="win-time">0:00</b></div>
+        <div><span>들린 소리</span><b id="win-noise">0</b></div>
+      </div>
+      <button id="btn-again" class="big-btn">다시 플레이</button>
+    </div>
+  </div>
+
+  <div id="hint-toast" class="hidden"></div>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
