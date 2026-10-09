@@ -106,7 +106,7 @@ function onKey(e, down) {
     case "KeyA": case "ArrowLeft": input.left = down; break;
     case "KeyD": case "ArrowRight": input.right = down; break;
     case "ShiftLeft": case "ShiftRight": input.sprint = down; break;
-    case "ControlLeft": case "ControlRight": case "KeyC": input.crouch = down; e.preventDefault(); break;
+    case "KeyC": input.crouch = down; e.preventDefault(); break;
     case "Space":
       if (down && !e.repeat) input.jump = true;
       if (!down) input.jump = false;
