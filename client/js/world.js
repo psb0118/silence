@@ -80,8 +80,8 @@ export class World {
 
   /* ---------- 하늘 ---------- */
   _buildSky() {
-    this.scene.background = new THREE.Color(0x0a0f18);
-    this.scene.fog = new THREE.FogExp2(0x0e1626, 0.02);
+    this.scene.background = new THREE.Color(0x070b12);
+    this.scene.fog = new THREE.FogExp2(0x0a111e, 0.024);
 
     const starGeo = new THREE.BufferGeometry();
     const n = 900;
@@ -110,13 +110,14 @@ export class World {
 
   /* ---------- 조명 ---------- */
   _buildLights() {
-    this.hemi = new THREE.HemisphereLight(0x4e6e9a, 0x223022, 1.7);
+    // 손전등 없이는 거의 아무것도 보이지 않는 밤.
+    this.hemi = new THREE.HemisphereLight(0x3a5678, 0x0c1810, 0.22);
     this.scene.add(this.hemi);
 
-    this.ambient = new THREE.AmbientLight(0x415a86, 2.2);
+    this.ambient = new THREE.AmbientLight(0x232f45, 0.06);
     this.scene.add(this.ambient);
 
-    const moon = new THREE.DirectionalLight(0xb0c8f2, 2.6);
+    const moon = new THREE.DirectionalLight(0x7d93c2, 0.32);
     moon.position.set(-60, 90, -80);
     moon.castShadow = this.quality.shadows;
     moon.shadow.mapSize.set(1024, 1024);
@@ -340,7 +341,7 @@ export class World {
     this.spawn = { x: 0, z: 45 };
 
     // 실내 조명 (따뜻한 색 → 바깥보다 안전해 보이게)
-    const lamp = new THREE.PointLight(0xffd9a0, 26, 22, 1.6);
+    const lamp = new THREE.PointLight(0xffd9a0, 22, 24, 1.6);
     lamp.position.set(cx, this.heightAt(cx, cz) + 2.6, cz);
     this.scene.add(lamp);
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10),
@@ -439,11 +440,11 @@ export class World {
     this._roof(33, (spineS + OZ1) / 2, 26, 16, M);  // S3 store
     this._roof(0, (spineS + OZ1) / 2, 40, 16, M);   // S2 reception
 
-    // ---- 랜드마크 조명 ----
-    this._lamp(-33, -2, 0xffa040, 22, 26);   // 복도 중앙
-    this._lamp(0, 8, 0xff6a4a, 20, 22);      // 리셉션 (붉은 비상등)
-    this._lamp(0, -30, 0x9fd0ff, 20, 26);    // machine hall
-    this._lamp(0, 17, 0xffd0a0, 16, 18);     // 입구
+    // ---- 랜드마크 조명 (손전등 없이도 랜드마크만 가늠 가능한 어두운 풀) ----
+    this._lamp(-33, -2, 0xffa040, 14, 22);   // 복도 중앙
+    this._lamp(0, 8, 0xff6a4a, 16, 20);      // 리셉션 (붉은 비상등)
+    this._lamp(0, -30, 0x9fd0ff, 15, 24);    // machine hall
+    this._lamp(0, 17, 0xffd0a0, 10, 16);     // 입구
 
     // ---- 방별 가구/프롭/은신처 ----
     this._furnishStorage(-33, (OZ0 + spineN) / 2, 26, 46);   // N1

@@ -17,6 +17,7 @@ export class NoiseSystem {
     this.loudCount = 0;
     this._prevMic = 0;
     this._micEventTimer = 0;
+    this._moveEventTimer = 0;
     this._micEventX = 0;
     this._micEventZ = 0;
 
@@ -72,6 +73,13 @@ export class NoiseSystem {
     if (this.impulse < 0.001) this.impulse = 0;
 
     this._updateMic(dt);
+
+    // 연속 이동 소음 → 괴물이 들을 수 있는 이벤트로 발행
+    this._moveEventTimer -= dt;
+    if (this.movement >= CONFIG.noise.moveEventThreshold && this._moveEventTimer <= 0) {
+      this._moveEventTimer = CONFIG.noise.moveEventInterval;
+      this._pushEvent(this.movement, this._micEventX, this._micEventZ, "move");
+    }
 
     const continuous = Math.max(this.movement, this.micLevel);
     let target = Math.max(continuous, this.impulse);

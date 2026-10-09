@@ -66,14 +66,14 @@ export class Monster {
     const root = new THREE.Group();
 
     const skinMat = new THREE.MeshStandardMaterial({
-      color: 0x8d9198, roughness: 0.78, metalness: 0.02,
-      emissive: 0x0b0e12, emissiveIntensity: 0.9
+      color: 0xadb3ba, roughness: 0.72, metalness: 0.02,
+      emissive: 0x303642, emissiveIntensity: 1.35
     });
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x30343a, roughness: 0.6, metalness: 0.2 });
     const clawMat = new THREE.MeshStandardMaterial({ color: 0x1c1f23, roughness: 0.4, metalness: 0.5 });
-    const mouthMat = new THREE.MeshStandardMaterial({ color: 0x160404, emissive: 0x3a0a08, emissiveIntensity: 0.7, roughness: 0.7 });
+    const mouthMat = new THREE.MeshStandardMaterial({ color: 0x2a0606, emissive: 0x6b1208, emissiveIntensity: 1.1, roughness: 0.7 });
     const toothMat = new THREE.MeshStandardMaterial({ color: 0xcfc7b6, roughness: 0.5 });
-    const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff6a3a, emissive: 0xff2a10, emissiveIntensity: 2.6, roughness: 0.4 });
+    const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff7a45, emissive: 0xff2a10, emissiveIntensity: 4.4, roughness: 0.4 });
 
     const bone = (len, r1, r2, mat) => {
       const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, 6), mat);
@@ -138,13 +138,13 @@ export class Monster {
     }
     const eyeGlow = new THREE.Sprite(new THREE.SpriteMaterial({
       map: makeGlow(), transparent: true, depthWrite: false,
-      blending: THREE.AdditiveBlending, opacity: 0.55, fog: false
+      blending: THREE.AdditiveBlending, opacity: 0.72, fog: false
     }));
-    eyeGlow.scale.set(0.5, 0.34, 1);
+    eyeGlow.scale.set(0.6, 0.42, 1);
     eyeGlow.position.set(0, 0.2, 0.18);
     this.head.add(eyeGlow);
     this.eyeGlow = eyeGlow;
-    this.eyeLight = new THREE.PointLight(0xff3a1e, 7, 11, 1.8);
+    this.eyeLight = new THREE.PointLight(0xff3a1e, 9, 14, 1.8);
     this.eyeLight.position.set(0, 0.2, 0.2);
     this.head.add(this.eyeLight);
 
@@ -275,16 +275,19 @@ export class Monster {
     }
 
     const st = this.state;
-    const loud = best.e.intensity >= 0.6;
-    const veryCloseNoise = best.d < 6;
     if (st === STATE.CHASE || st === STATE.ATTACK) return;
-    if (loud || best.score > 0.42 || veryCloseNoise) {
+    // 크고 가까운 소리(걷기 포함) → 즉시 추격. 소리를 좇아 끝까지 쫓아온다.
+    const loud = best.e.intensity >= 0.6 || best.score > 0.30 || best.d < 8;
+    if (loud) {
       this._setState(STATE.CHASE);
-    } else if (st === STATE.SEARCH || st === STATE.INVESTIGATE) {
-      // 이미 조사 중이면 마지막 지점만 갱신
-    } else {
+    } else if (st === STATE.SEARCH) {
+      // 수색 중 다른 소리가 들리면 그 방향으로 몸을 돌린다
+      this.inspectSpot = null;
+      this._searchTarget = { x: best.e.x, z: best.e.z };
+    } else if (st === STATE.ROAM && best.e.intensity >= 0.4) {
       this._setState(STATE.INVESTIGATE);
     }
+    // INVESTIGATE/STALK는 이미 lastKnown(가장 최근 소리)을 향하므로 갱신만으로 충분
   }
 
   _assignNearestHide(x, z) {

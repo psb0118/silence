@@ -48,7 +48,9 @@ export const CONFIG = {
     attack: 12,    // 소리 상승 속도 (초당 지수)
     release: 3.2,  // 소리 감쇠 속도
     impulseDecay: 2.6,
-    meterFloor: 0.02
+    meterFloor: 0.02,
+    moveEventInterval: 0.30,   // 연속 이동 소음이 괴물에게 도달하는 주기
+    moveEventThreshold: 0.22   // 이 이상의 이동 소음만 '들림' (앉기는 조용)
   },
 
   mic: {
@@ -74,7 +76,7 @@ export const CONFIG = {
     sightFov: 0.72,        // 시야각(코사인 임계) — 정면 위주
 
     hearBase: 28,          // intensity=1 기준 청취 거리
-    hearMinIntensity: 0.12,
+    hearMinIntensity: 0.06,
 
     listenTime: 1.5,       // 소리 방향을 살피는 시간
     investigateTime: 8,

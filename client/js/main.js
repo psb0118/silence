@@ -112,7 +112,7 @@ function onKey(e, down) {
       if (!down) input.jump = false;
       break;
     case "KeyF":
-      if (down && !e.repeat && game.phase === "playing") { player.toggleFlashlight(); ui.setFlashlight(player.flashOn); }
+      if (down && !e.repeat) toggleFlashlightUI();
       break;
     case "KeyM":
       if (down && !e.repeat && game.phase === "playing") toggleMic();
@@ -140,6 +140,17 @@ document.addEventListener("mousemove", (e) => {
 renderer.domElement.addEventListener("click", () => {
   if (game.phase === "playing" && !pointerLocked) lockPointer();
 });
+
+// 마우스 왼쪽 클릭으로도 손전등을 켜고 끈다
+renderer.domElement.addEventListener("mousedown", (e) => {
+  if (e.button === 0 && pointerLocked) toggleFlashlightUI();
+});
+
+function toggleFlashlightUI() {
+  if (game.phase !== "playing") return;
+  player.toggleFlashlight();
+  ui.setFlashlight(player.flashOn);
+}
 
 function lockPointer() {
   const el = renderer.domElement;
