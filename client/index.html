@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>SILENCE — 침묵의 숲</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🌲</text></svg>" />
+  <title>SILENCE ??移⑤У????/title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>?뙯</text></svg>" />
   <link rel="stylesheet" href="style.css" />
   <script type="importmap">
     {
@@ -23,7 +23,7 @@
     <div id="fear-vignette"></div>
     <div id="damage-flash"></div>
 
-    <!-- 중앙 크로스헤어 -->
+    <!-- 以묒븰 ?щ줈?ㅽ뿤??-->
     <div id="crosshair">
       <span class="ch-arm ch-t"></span>
       <span class="ch-arm ch-b"></span>
@@ -32,7 +32,7 @@
       <span class="ch-dot"></span>
     </div>
 
-    <!-- 노이즈 미터 (화면 중앙보다 살짝 아래) -->
+    <!-- ?몄씠利?誘명꽣 (?붾㈃ 以묒븰蹂대떎 ?댁쭩 ?꾨옒) -->
     <div id="noise-wrap">
       <div class="noise-head">
         <span class="noise-icon" aria-hidden="true">
@@ -47,73 +47,73 @@
       </div>
     </div>
 
-    <!-- 스태미나 -->
+    <!-- ?ㅽ깭誘몃굹 -->
     <div id="stamina-wrap">
       <div class="stamina-icon">RUN</div>
       <div id="stamina-bar"><div id="stamina-fill"></div></div>
     </div>
 
-    <!-- 손전등 배터리 -->
+    <!-- ?먯쟾??諛고꽣由?-->
     <div id="battery-wrap">
       <div class="stamina-icon">LIGHT</div>
       <div id="battery-bar"><div id="battery-fill"></div></div>
     </div>
 
-    <!-- 목표 / 상태 -->
+    <!-- 紐⑺몴 / ?곹깭 -->
     <div id="objective">
-      <div id="obj-main">분전기를 찾아 전원을 복구하세요</div>
-      <div id="obj-sub">분전기 <b><span id="fuse-count">0</span>/<span id="fuse-total">5</span></b> · 가장 가까운 분전기 <b><span id="fuse-dist">--</span>m</b></div>
+      <div id="obj-main">遺꾩쟾湲곕? 李얠븘 ?꾩썝??蹂듦뎄?섏꽭??/div>
+      <div id="obj-sub">遺꾩쟾湲?<b><span id="fuse-count">0</span>/<span id="fuse-total">5</span></b> 쨌 媛??媛源뚯슫 遺꾩쟾湲?<b><span id="fuse-dist">--</span>m</b></div>
     </div>
 
-    <!-- 좌하단: 장비 상태 -->
+    <!-- 醫뚰븯?? ?λ퉬 ?곹깭 -->
     <div id="status-left">
-      <div id="safezone-status" class="chip hidden"><span class="dot"></span>안전지대 <b id="safezone-text">밖</b></div>
-      <div id="flashlight-status" class="chip"><span class="dot"></span>손전등 <b id="flash-text">ON</b> <em>[F]</em></div>
-      <div id="mic-status" class="chip"><span class="dot"></span>마이크 <b id="mic-text">확인 중…</b> <em>[M]</em></div>
+      <div id="safezone-status" class="chip hidden"><span class="dot"></span>?덉쟾吏? <b id="safezone-text">諛?/b></div>
+      <div id="flashlight-status" class="chip"><span class="dot"></span>?먯쟾??<b id="flash-text">ON</b> <em>[F]</em></div>
+      <div id="mic-status" class="chip"><span class="dot"></span>留덉씠??<b id="mic-text">?뺤씤 以묅?/b> <em>[M]</em></div>
     </div>
 
-    <!-- 상호작용 프롬프트 -->
+    <!-- ?곹샇?묒슜 ?꾨＼?꾪듃 -->
     <div id="interact" class="hidden">
       <span class="key">E</span>
-      <span id="interact-text">줍기</span>
+      <span id="interact-text">以띻린</span>
       <div id="interact-progress"><div id="interact-fill"></div></div>
     </div>
 
-    <!-- 단계 표시 (경계/위험) -->
+    <!-- ?④퀎 ?쒖떆 (寃쎄퀎/?꾪뿕) -->
     <div id="alert-banner" class="hidden"></div>
   </div>
 
-  <!-- ================= 시작 화면 ================= -->
+  <!-- ================= ?쒖옉 ?붾㈃ ================= -->
   <div id="start" class="overlay">
     <div class="box">
       <h1 class="title">SILENCE</h1>
-      <p class="subtitle">격리 실패 연구단지 · 소리로 사냥하는 형상</p>
-      <p class="flavor">너는 잠이 아닌 착란에서 깨어났다. V-13 <b>'청취자'</b>는 이 숨겨진 시설의 심장을 배회한다.
-      그것은 <b>소리</b>로 사냥한다. 발소리, 숨, 그리고 너를 내쉬는 순간의 모든 것까지.</p>
+      <p class="subtitle">寃⑸━ ?ㅽ뙣 ?곌뎄?⑥? 쨌 ?뚮━濡??щ깷?섎뒗 ?뺤긽</p>
+      <p class="flavor">?덈뒗 ?좎씠 ?꾨땶 李⑸??먯꽌 源⑥뼱?щ떎. V-13 <b>'泥?랬??</b>?????④꺼吏??쒖꽕???ъ옣??諛고쉶?쒕떎.
+      洹멸쾬? <b>?뚮━</b>濡??щ깷?쒕떎. 諛쒖냼由? ?? 洹몃━怨??덈? ?댁돩???쒓컙??紐⑤뱺 寃껉퉴吏.</p>
 
       <div class="cols">
         <div class="col">
-          <h3>조작</h3>
+          <h3>議곗옉</h3>
           <ul class="keys">
-            <li><span>WASD</span> 이동</li>
-            <li><span>Shift</span> 달리기 (소음↑)</li>
-            <li><span>C</span> 앉기 (소음↓)</li>
-            <li><span>Space</span> 점프</li>
-            <li><span>F / 마우스 좌클릭</span> 손전등 켜고 끄기</li>
-            <li><span>E</span> 상호작용 / 은신처에서 나오기</li>
-            <li><span>Esc</span> 일시정지</li>
+            <li><span>WASD</span> ?대룞</li>
+            <li><span>Shift</span> ?щ━湲?(?뚯쓬??</li>
+            <li><span>C</span> ?됯린 (?뚯쓬??</li>
+            <li><span>Space</span> ?먰봽</li>
+            <li><span>F / 留덉슦??醫뚰겢由?/span> ?먯쟾??耳쒓퀬 ?꾧린</li>
+            <li><span>E</span> ?곹샇?묒슜 / ??좎쿂?먯꽌 ?섏삤湲?/li>
+            <li><span>Esc</span> ?쇱떆?뺤?</li>
           </ul>
         </div>
         <div class="col">
-          <h3>생존</h3>
+          <h3>?앹〈</h3>
           <ul class="rules">
-            <li>이름 없는 창고에 갇혔다. <b>분전기 5개</b>를 재기동해 격리구역 <b>출입 철문</b>의 전원을 복구하고 탈출하라.</li>
-            <li>손전등이 없으면 <b>거의 아무것도 보이지 않는다</b>. 꺼져 있다면 먼저 켜라.</li>
-            <li>청취자는 <b>소리</b>와 <b>시야</b>로 너를 추적한다. 뛰거나 점프하면 멀리서도 들리고, 소리를 내는 한 멈추지 않는다.</li>
-            <li>그것은 <b>숨은 너를 보지 못한다</b>. 들킬 듯하면 사물함·책상 밑 등 <b>은신처</b>에 숨어라. 나올 땐 <b>E</b>.</li>
-            <li>손전등에는 <b>배터리</b>가 있다. 남쪽 대피소(<b>안전지대</b>)의 충전소에서 보급하라.</li>
-            <li>안전지대 안에서는 청취자조차 너에게 손댈 수 없다.</li>
-            <li>마이크를 켜면 네 <b>실제 목소리</b>마저 사냥감이 된다.</li>
+            <li>?대쫫 ?녿뒗 李쎄퀬??媛뉙삍?? <b>遺꾩쟾湲?5媛?/b>瑜??ш린?숉빐 寃⑸━援ъ뿭 <b>異쒖엯 泥좊Ц</b>???꾩썝??蹂듦뎄?섍퀬 ?덉텧?섎씪.</li>
+            <li>?먯쟾?깆씠 ?놁쑝硫?<b>嫄곗쓽 ?꾨Т寃껊룄 蹂댁씠吏 ?딅뒗??/b>. 爰쇱졇 ?덈떎硫?癒쇱? 耳쒕씪.</li>
+            <li>泥?랬?먮뒗 <b>?뚮━</b>? <b>?쒖빞</b>濡??덈? 異붿쟻?쒕떎. ?곌굅???먰봽?섎㈃ 硫由ъ꽌???ㅻ━怨? ?뚮━瑜??대뒗 ??硫덉텛吏 ?딅뒗??</li>
+            <li>洹멸쾬? <b>?⑥? ?덈? 蹂댁? 紐삵븳??/b>. ?ㅽ궗 ??븯硫??щЪ?㉱룹콉??諛???<b>??좎쿂</b>???⑥뼱?? ?섏삱 ??<b>E</b>.</li>
+            <li>?먯쟾?깆뿉??<b>諛고꽣由?/b>媛 ?덈떎. ?⑥そ ??쇱냼(<b>?덉쟾吏?</b>)??異⑹쟾?뚯뿉??蹂닿툒?섎씪.</li>
+            <li>?덉쟾吏? ?덉뿉?쒕뒗 泥?랬?먯“李??덉뿉寃??먮뙂 ???녿떎.</li>
+            <li>留덉씠?щ? 耳쒕㈃ ??<b>?ㅼ젣 紐⑹냼由?/b>留덉? ?щ깷媛먯씠 ?쒕떎.</li>
           </ul>
         </div>
       </div>
@@ -123,85 +123,94 @@
           <input type="checkbox" id="use-mic" checked />
           <span class="slider"></span>
         </label>
-        <span>마이크 사용 (허용하면 실제 목소리로 괴물을 유인합니다)</span>
+        <span>留덉씠???ъ슜 (?덉슜?섎㈃ ?ㅼ젣 紐⑹냼由щ줈 愿대Ъ???좎씤?⑸땲??</span>
       </div>
 
-      <button id="btn-start" class="big-btn">숲으로 들어가기</button>
+      <button id="btn-start" class="big-btn">?뀁쑝濡??ㅼ뼱媛湲?/button>
       <p id="start-note" class="note"></p>
     </div>
   </div>
 
-  <!-- ================= 일시정지 ================= -->
+  <!-- ================= ?쇱떆?뺤? ================= -->
   <div id="pause" class="overlay hidden">
     <div class="box small">
-      <h2>일시정지</h2>
+      <h2>?쇱떆?뺤?</h2>
       <div class="setting">
-        <label>마우스 감도</label>
+        <label>留덉슦??媛먮룄</label>
         <input type="range" id="set-sens" min="0.3" max="2.5" step="0.05" value="1" />
         <span id="set-sens-val">1.00x</span>
       </div>
       <div class="setting">
-        <label>세로 반전</label>
+        <label>?몃줈 諛섏쟾</label>
         <label class="switch"><input type="checkbox" id="set-invy" /><span class="slider"></span></label>
       </div>
       <div class="setting">
-        <label>마스터 볼륨</label>
+        <label>留덉뒪??蹂쇰ⅷ</label>
         <input type="range" id="set-vol" min="0" max="1" step="0.05" value="0.8" />
         <span id="set-vol-val">80%</span>
       </div>
       <div class="setting">
-        <label>마이크 감도</label>
+        <label>留덉씠??媛먮룄</label>
         <input type="range" id="set-micsens" min="0.2" max="3" step="0.1" value="1" />
         <span id="set-micsens-val">1.0x</span>
       </div>
       <div class="setting">
-        <label>화질</label>
+        <label>?붿쭏</label>
         <select id="set-quality">
-          <option value="low">낮음 (그림자 끔)</option>
-          <option value="medium" selected>보통</option>
-          <option value="high">높음</option>
+          <option value="low">??쓬 (洹몃┝????</option>
+          <option value="medium" selected>蹂댄넻</option>
+          <option value="high">?믪쓬</option>
         </select>
       </div>
       <div class="pause-actions">
-        <button id="btn-resume" class="big-btn">계속하기</button>
-        <button id="btn-quit" class="ghost-btn">메뉴로</button>
+        <button id="btn-resume" class="big-btn">怨꾩냽?섍린</button>
+        <button id="btn-quit" class="ghost-btn">硫붾돱濡?/button>
       </div>
     </div>
   </div>
 
-  <!-- ================= 점프스케어 ================= -->
+  <!-- ================= ?먰봽?ㅼ???================= -->
   <div id="jumpscare" class="hidden">
     <canvas id="scare-canvas" width="1024" height="1024"></canvas>
   </div>
 
-  <!-- ================= 사망 ================= -->
+  <!-- ================= ?щ쭩 ================= -->
   <div id="death" class="overlay hidden dark">
     <div class="box small">
-      <h2 class="dead">너는 잡혔다.</h2>
-      <p class="flavor">그것이 너의 숨소리를 들었다.</p>
+      <h2 class="dead">?덈뒗 ?≫삍??</h2>
+      <p class="flavor">洹멸쾬???덉쓽 ?⑥냼由щ? ?ㅼ뿀??</p>
       <div class="death-stats">
-        <div><span>생존 시간</span><b id="stat-time">0:00</b></div>
-        <div><span>모은 분전기</span><b id="stat-fuse">0</b></div>
+        <div><span>?앹〈 ?쒓컙</span><b id="stat-time">0:00</b></div>
+        <div><span>紐⑥? 遺꾩쟾湲?/span><b id="stat-fuse">0</b></div>
       </div>
-      <button id="btn-respawn" class="big-btn">다시 숲으로</button>
+      <button id="btn-respawn" class="big-btn">?ㅼ떆 ?뀁쑝濡?/button>
     </div>
   </div>
 
-  <!-- ================= 탈출 성공 ================= -->
+  <!-- ================= ?덉텧 ?깃났 ================= -->
   <div id="win" class="overlay hidden">
     <div class="box small">
-      <h2 class="win">탈출 성공</h2>
-      <p class="flavor">철문이 닫히고, 숲이 다시 조용해진다. …정말로?</p>
+      <h2 class="win">?덉텧 ?깃났</h2>
+      <p class="flavor">泥좊Ц???ロ엳怨? ?뀁씠 ?ㅼ떆 議곗슜?댁쭊?? ??젙留먮줈?</p>
       <div class="death-stats">
-        <div><span>클리어 시간</span><b id="win-time">0:00</b></div>
-        <div><span>들린 소리</span><b id="win-noise">0</b></div>
+        <div><span>?대━???쒓컙</span><b id="win-time">0:00</b></div>
+        <div><span>?ㅻ┛ ?뚮━</span><b id="win-noise">0</b></div>
       </div>
-      <button id="btn-again" class="big-btn">다시 플레이</button>
+      <button id="btn-again" class="big-btn">?ㅼ떆 ?뚮젅??/button>
     </div>
   </div>
 
-  <div id="hint-toast" class="hidden"></div>
+  
+    <!-- 인벤토리 -->
+    <div id="inventory-bar"></div>
+    <div id="inv-empty" class="hidden">인벤토리가 꽉 찼습니다</div>
+<div id="hint-toast" class="hidden"></div>
 
   <script type="module" src="./js/main.js"></script>
 </body>
 </html>
+
+    <!-- ?몃깽?좊━ -->
+    <div id="inventory-bar"></div>
+    <div id="inv-empty" class="hidden">?몃깽?좊━媛 苑?李쇱뒿?덈떎</div>
+

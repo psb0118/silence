@@ -28,6 +28,8 @@ export class UI {
     this.jumpscare = $("#jumpscare");
     this.scareCanvas = $("#scare-canvas");
     this.hintToast = $("#hint-toast");
+    this.invBar = $("#inventory-bar");
+    this.invEmpty = $("#inv-empty");
 
     this.start = $("#start");
     this.pause = $("#pause");
@@ -289,5 +291,24 @@ export class UI {
     this.hintToast.classList.add("show");
     clearTimeout(this._toastT);
     this._toastT = setTimeout(() => this.hintToast.classList.remove("show"), ms);
+  }
+
+  setInventory(inv) {
+    if (!this.invBar) return;
+    this.invBar.innerHTML = '';
+    for (let i = 0; i < inv.slots.length; i++) {
+      const slot = inv.slots[i];
+      const el = document.createElement('div');
+      el.className = 'inv-slot' + (slot.count > 0 ? ' filled' : '');
+      el.innerHTML = '<span class="keynum">' + (i + 1) + '</span>' + (slot.count > 0 ? '<span>' + slot.name + '</span><span class="count">' + slot.count + '</span>' : (i + 1));
+      this.invBar.appendChild(el);
+    }
+  }
+
+  showInvEmpty(ms = 1200) {
+    if (!this.invEmpty) return;
+    this.invEmpty.classList.remove('hidden');
+    clearTimeout(this._invT);
+    this._invT = setTimeout(() => this.invEmpty.classList.add('hidden'), ms);
   }
 }

@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import { CONFIG } from "./config.js";
-import { clamp, damp, lerp } from "./util.js";
+import { Inventory } from "./inventory.js";
+import { damp, lerp, clamp } from "./util.js";
 
 export class Player {
   constructor(camera, world, noise, audio, settings) {
@@ -41,6 +41,7 @@ export class Player {
     this._lastStepPhase = 0;
     this._cameraShake = 0;
     this.moveSpeedActual = 0;
+    this.inventory = new Inventory(9);
 
     this.camera.rotation.order = "YXZ";
     this._buildFlashlight();
