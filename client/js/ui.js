@@ -169,9 +169,10 @@ export class UI {
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, W, H);
 
-    // 창백한 얼굴
+    // 창백한 얼굴 (더 크게, 더 무너진 윤곽)
     ctx.save();
     ctx.translate(W / 2, H / 2);
+    ctx.rotate(Math.sin(Date.now() * 0.05) * 0.04);
     const faceGrad = ctx.createRadialGradient(0, -60, 30, 0, 0, 480);
     faceGrad.addColorStop(0, "#d9d2c8");
     faceGrad.addColorStop(0.7, "#8f867c");
@@ -182,9 +183,9 @@ export class UI {
     const pts = 40;
     for (let i = 0; i <= pts; i++) {
       const a = (i / pts) * Math.PI * 2 - Math.PI / 2;
-      const rr = 1 + Math.sin(i * 2.7) * 0.06 + Math.sin(i * 5.1) * 0.03;
-      const rx = 300 * rr;
-      const ry = 400 * rr;
+      const rr = 1 + Math.sin(i * 2.7) * 0.09 + Math.sin(i * 5.1) * 0.045;
+      const rx = 340 * rr;
+      const ry = 450 * rr;
       const x = Math.cos(a) * rx;
       const y = Math.sin(a) * ry - 40;
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
@@ -208,15 +209,19 @@ export class UI {
       ctx.stroke();
     }
 
-    // 눈 (텅 빈 검은 구멍 + 작은 흰 점)
+    // 눈 (텅 빈 검은 구멍 + 잔불 한 점)
     for (const ex of [-115, 115]) {
-      ctx.fillStyle = "#050505";
+      ctx.fillStyle = "#000";
       ctx.beginPath();
-      ctx.ellipse(ex, -60, 78, 96, 0, 0, Math.PI * 2);
+      ctx.ellipse(ex, -60, 84, 104, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = "rgba(200,220,255,0.85)";
+      const ember = ctx.createRadialGradient(ex, -50, 2, ex, -50, 34);
+      ember.addColorStop(0, "rgba(255,210,120,0.95)");
+      ember.addColorStop(0.35, "rgba(255,90,30,0.7)");
+      ember.addColorStop(1, "rgba(120,10,10,0)");
+      ctx.fillStyle = ember;
       ctx.beginPath();
-      ctx.arc(ex + (ex < 0 ? 12 : -12), -50, 9, 0, Math.PI * 2);
+      ctx.arc(ex, -50, 34, 0, Math.PI * 2);
       ctx.fill();
     }
     // 눈 밑 검은 번짐
@@ -229,11 +234,19 @@ export class UI {
       ctx.fill();
     }
 
-    // 벌어진 입
-    ctx.fillStyle = "#070000";
+    // 벌어진 입 (붉게 달아오른 심연)
+    const gap = 200;
+    const mouthGlow = ctx.createRadialGradient(0, gap, 8, 0, gap, 190);
+    mouthGlow.addColorStop(0, "#ff2a08");
+    mouthGlow.addColorStop(0.55, "#5a0606");
+    mouthGlow.addColorStop(1, "#000");
+    ctx.fillStyle = mouthGlow;
     ctx.beginPath();
-    ctx.ellipse(0, 200, 120, 175, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, gap, 128, 188, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = "rgba(255,60,20,0.8)";
+    ctx.lineWidth = 6;
+    ctx.stroke();
     // 이빨
     ctx.fillStyle = "#c9c2b6";
     for (let i = -4; i <= 4; i++) {
@@ -258,7 +271,7 @@ export class UI {
     const img = ctx.getImageData(0, 0, W, H);
     const d = img.data;
     for (let i = 0; i < d.length; i += 4) {
-      const n = (Math.random() - 0.5) * 46;
+      const n = (Math.random() - 0.5) * 70;
       d[i] += n; d[i + 1] += n; d[i + 2] += n;
     }
     ctx.putImageData(img, 0, 0);

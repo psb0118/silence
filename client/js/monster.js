@@ -71,7 +71,7 @@ export class Monster {
     });
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x30343a, roughness: 0.6, metalness: 0.2 });
     const clawMat = new THREE.MeshStandardMaterial({ color: 0x1c1f23, roughness: 0.4, metalness: 0.5 });
-    const mouthMat = new THREE.MeshStandardMaterial({ color: 0x2a0606, emissive: 0x6b1208, emissiveIntensity: 1.1, roughness: 0.7 });
+    const mouthMat = new THREE.MeshStandardMaterial({ color: 0x2a0606, emissive: 0x8a1508, emissiveIntensity: 1.6, roughness: 0.7 });
     const toothMat = new THREE.MeshStandardMaterial({ color: 0xcfc7b6, roughness: 0.5 });
     const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff7a45, emissive: 0xff2a10, emissiveIntensity: 4.4, roughness: 0.4 });
 
@@ -119,14 +119,39 @@ export class Monster {
     const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.26, 0.06), mouthMat);
     mouth.position.set(0, 0.12, 0.16);
     this.head.add(mouth);
+    // 끝이 갈라진 상아(위턱)
     for (let i = 0; i < 7; i++) {
       for (const s of [-1, 1]) {
-        const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.05, 4), toothMat);
-        tooth.position.set(s * 0.028, 0.02 + i * 0.032, 0.17);
+        const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.016, 0.09, 4), toothMat);
+        tooth.position.set(s * 0.03, 0.03 + i * 0.032, 0.175);
         tooth.rotation.z = s * -0.5;
         this.head.add(tooth);
       }
     }
+    // 아래턱의 끝이 갈라진 이빨 (위쪽으로 돋아남)
+    for (let i = 0; i < 5; i++) {
+      for (const s of [-1, 1]) {
+        const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.013, 0.07, 4), toothMat);
+        tooth.position.set(s * 0.03, 0.0 - i * 0.024, 0.17);
+        this.head.add(tooth);
+      }
+    }
+    // 짧고 구부러진 뿔 (뒤로 젖힌)
+    for (const hx of [-0.12, 0.12]) {
+      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.024, 0.18, 5), darkMat);
+      horn.position.set(hx, 0.38, -0.01);
+      horn.rotation.x = -0.5;
+      horn.rotation.z = -hx * 10;
+      this.head.add(horn);
+      const nub = new THREE.Mesh(new THREE.SphereGeometry(0.014, 6, 6), darkMat);
+      nub.position.set(hx, 0.33, 0.05);
+      this.head.add(nub);
+    }
+    // 눈썹 능선 — 깊은 잔불 위
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.035, 0.08), darkMat);
+    brow.position.set(0, 0.26, 0.13);
+    brow.rotation.x = -0.22;
+    this.head.add(brow);
     // 깊은 눈구멍 속의 잔불
     for (const ex of [-0.07, 0.07]) {
       const socket = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 8), darkMat);
@@ -147,6 +172,18 @@ export class Monster {
     this.eyeLight = new THREE.PointLight(0xff3a1e, 9, 14, 1.8);
     this.eyeLight.position.set(0, 0.2, 0.2);
     this.head.add(this.eyeLight);
+    this.mouthMat = mouthMat;
+
+    // 몸에서 피어오르는 어두운 안개 후광
+    const aura = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeGlow(), transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, opacity: 0.14, fog: false,
+      color: 0x55121f
+    }));
+    aura.scale.set(1.7, 1.4, 1);
+    aura.position.set(0, 1.25, 0);
+    root.add(aura);
+    this.aura = aura;
 
     // 팔 (과도하게 긴, 손이 지면 근처까지)
     const makeArm = (side) => {
@@ -672,7 +709,7 @@ export class Monster {
     const rate = 1.4 + speed01 * 9 + (chasing ? 3 : 0);
     const p = (this.animPhase += dt * rate);
 
-    const hunch = clamp(0.45 + speed01 * 0.5 + (stalking ? 0.15 : 0) + (attacking ? 0.2 : 0), 0.4, 1.3);
+    const hunch = clamp(0.45 + speed01 * 0.5 + (stalking ? 0.24 : 0) + (attacking ? 0.2 : 0), 0.4, 1.3);
     const swing = 0.22 + speed01 * 0.85;
 
     // 다리
@@ -720,6 +757,20 @@ export class Monster {
 
     if (attacking) this.attackAnim = clamp((this._attackPhase - CONFIG.monster.attackWindup) / 0.3, 0, 1);
     else this.attackAnim = damp(this.attackAnim, 0, 6, dt);
+
+    // 추격/공격 — 눈의 잔불이 스트로브처럼 번쩍이고 입이 붉게 달아오른다
+    const frenzy = chasing || attacking;
+    if (this.eyeLight) this.eyeLight.intensity = frenzy ? 9 + Math.sin(this.time * 27) * 7 : 8;
+    if (this.eyeGlow) {
+      this.eyeGlow.material.opacity = frenzy ? 0.55 + 0.35 * Math.sin(this.time * 27) : 0.45;
+      const es = 1 + (frenzy ? 0.3 + 0.2 * Math.sin(this.time * 23) : 0);
+      this.eyeGlow.scale.set(0.6 * es, 0.42 * es, 1);
+    }
+    if (this.mouthMat) this.mouthMat.emissiveIntensity = frenzy ? 1.9 + Math.sin(this.time * 24) * 0.9 : 1.6;
+    if (this.aura) {
+      this.aura.material.opacity = 0.13 + (frenzy ? 0.06 : 0) + Math.sin(this.time * 2.3) * 0.04;
+      this.aura.scale.set(1.7 + Math.sin(this.time * 1.9) * 0.12, 1.4 + Math.sin(this.time * 1.9 + 1) * 0.09, 1);
+    }
   }
 
   /* ================= 사운드 ================= */

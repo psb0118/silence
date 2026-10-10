@@ -197,8 +197,8 @@ function startGame() {
   ui.hide(ui.win);
   ui.setHudVisible(true);
   ui.setFlashlight(true);
-  ui.setObjective("퓨즈를 찾아 전원을 복구하세요", 0, FUSE_TOTAL, null);
-  ui.toast("숲이 너를 삼켰다. 조용히 움직여라.", 3200);
+  ui.setObjective("분전기 5개를 찾아 전원을 복구하세요", 0, FUSE_TOTAL, null);
+  ui.toast("청취자가 너의 숨을 느꼈다. 조용히 움직여라.", 3400);
   if (noise.micEnabled) noise.attachMic();
   lockPointer();
 }
@@ -240,7 +240,7 @@ function onCaught() {
   game.phase = "scaring";
   game.scareTimer = 0;
   unlockPointer();
-  player.addCameraShake(1.0);
+  player.addCameraShake(1.5);
   ui.showJumpscare();
   audio.jumpscare();
   ui.flashDamage();
@@ -311,7 +311,7 @@ function updateObjectives(dt) {
     }
   }
 
-  if (nearest && nd < CONFIG.interaction.pickupRange) { target = { type: "fuse", fuse: nearest }; label = "퓨즈 줍기"; }
+  if (nearest && nd < CONFIG.interaction.pickupRange) { target = { type: "fuse", fuse: nearest }; label = "분전기 회수"; }
   const gd = Math.hypot(world.exit.x - player.x, world.exit.z - player.z);
   if (game.exitPowered && gd < CONFIG.interaction.gateRange) { target = { type: "gate" }; label = "철문 열고 탈출"; }
 
@@ -342,9 +342,9 @@ function updateObjectives(dt) {
 
   // 목표 텍스트
   if (game.exitPowered) {
-    ui.setObjective("출구 철문으로 탈출하라", game.collected, FUSE_TOTAL, null);
+    ui.setObjective("격리 철문으로 탈출하라", game.collected, FUSE_TOTAL, null);
   } else {
-    ui.setObjective("퓨즈를 찾아 전원을 복구하세요", game.collected, FUSE_TOTAL, nearest ? nd : null);
+    ui.setObjective("분전기 5개를 찾아 전원을 복구하세요", game.collected, FUSE_TOTAL, nearest ? nd : null);
   }
 }
 
@@ -358,10 +358,10 @@ function collectFuse(f) {
   if (game.collected >= FUSE_TOTAL) {
     game.exitPowered = true;
     world.setExitPowered(true);
-    ui.toast("전원 복구! 남쪽 출구 철문이 열렸다.", 3600);
-    ui.setObjective("출구 철문으로 탈출하라", game.collected, FUSE_TOTAL, null);
+    ui.toast("전원 복구 — 격리 철문의 잠금이 풀렸다", 3600);
+    ui.setObjective("격리 철문으로 탈출하라", game.collected, FUSE_TOTAL, null);
   } else {
-    ui.toast(`퓨즈 ${game.collected}/${FUSE_TOTAL} 획득`, 1600);
+    ui.toast(`분전기 ${game.collected}/${FUSE_TOTAL} 재기동`, 1600);
   }
 }
 
@@ -467,10 +467,15 @@ function loop() {
     audio.heartbeat(fear, dt);
 
     // 경고 배너
-    if (monster.state === STATE.CHASE && dist < 34) ui.setAlert("도망쳐 — 그것이 온다");
-    else if (monster.state === STATE.INVESTIGATE && dist < 20) ui.setAlert("무언가 소리를 듣고 다가온다");
-    else if (monster.state === STATE.SEARCH && dist < 14) ui.setAlert("그것이 주변을 뒤진다");
+    if (monster.state === STATE.CHASE && dist < 34) ui.setAlert("도망쳐 — 청취자가 온다");
+    else if (monster.state === STATE.INVESTIGATE && dist < 20) ui.setAlert("청취자가 소리 방향으로 접근한다");
+    else if (monster.state === STATE.SEARCH && dist < 14) ui.setAlert("청취자가 은신처를 뒤진다");
     else ui.setAlert(null);
+
+    // 청취자가 다가오면 조명이 '텔타'처럼 붉게 번져간다
+    world.distress = (monster.state === STATE.CHASE || monster.state === STATE.ATTACK)
+      ? { x: monster.x, z: monster.z }
+      : null;
 
     // 환경 공포
     game.ambientTimer -= dt;
@@ -489,8 +494,8 @@ function loop() {
   // 점프스케어 타이머
   if (game.phase === "scaring") {
     game.scareTimer += dt;
-    player.addCameraShake(0.5);
-    if (game.scareTimer > 1.15) finishScare();
+    player.addCameraShake(0.65);
+    if (game.scareTimer > 1.45) finishScare();
   }
 
   // 그림자 연출 타이머

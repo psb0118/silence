@@ -61,8 +61,8 @@
 
     <!-- 목표 / 상태 -->
     <div id="objective">
-      <div id="obj-main">퓨즈를 찾아 전원을 복구하세요</div>
-      <div id="obj-sub">퓨즈 <b><span id="fuse-count">0</span>/<span id="fuse-total">5</span></b> · 가장 가까운 퓨즈 <b><span id="fuse-dist">--</span>m</b></div>
+      <div id="obj-main">분전기를 찾아 전원을 복구하세요</div>
+      <div id="obj-sub">분전기 <b><span id="fuse-count">0</span>/<span id="fuse-total">5</span></b> · 가장 가까운 분전기 <b><span id="fuse-dist">--</span>m</b></div>
     </div>
 
     <!-- 좌하단: 장비 상태 -->
@@ -87,8 +87,9 @@
   <div id="start" class="overlay">
     <div class="box">
       <h1 class="title">SILENCE</h1>
-      <p class="subtitle">침묵의 숲 · 노이즈 생존 공포</p>
-      <p class="flavor">그것은 <b>소리</b>를 좇는다. 무엇을 하든, 조용히 해야 한다.</p>
+      <p class="subtitle">격리 실패 연구단지 · 소리로 사냥하는 형상</p>
+      <p class="flavor">너는 잠이 아닌 착란에서 깨어났다. V-13 <b>'청취자'</b>는 이 숨겨진 시설의 심장을 배회한다.
+      그것은 <b>소리</b>로 사냥한다. 발소리, 숨, 그리고 너를 내쉬는 순간의 모든 것까지.</p>
 
       <div class="cols">
         <div class="col">
@@ -99,20 +100,20 @@
             <li><span>C</span> 앉기 (소음↓)</li>
             <li><span>Space</span> 점프</li>
             <li><span>F / 마우스 좌클릭</span> 손전등 켜고 끄기</li>
-            <li><span>E</span> 줍기 / 탈출</li>
+            <li><span>E</span> 상호작용 / 은신처에서 나오기</li>
             <li><span>Esc</span> 일시정지</li>
           </ul>
         </div>
         <div class="col">
           <h3>생존</h3>
           <ul class="rules">
-            <li>밤의 숲에 갇혔다. <b>퓨즈 5개</b>를 모아 <b>출구 철문</b>의 전원을 복구해 탈출하라.</li>
-            <li>손전등이 없으면 <b>거의 아무것도 보이지 않는다</b>. 꺼져 있으면 먼저 켜라.</li>
-            <li>괴물은 <b>소리</b>와 <b>시야</b>로 너를 좇는다. 뛰거나 점프하면 멀리서도 들리고, 걸어서 소리 내는 한 멈추지 않는다.</li>
-            <li>괴물은 <b>숨은 플레이어를 보지 못한다</b>. 위험하면 사물함·책상 밑 등 <b>은신처</b>에 숨어라. 다시 나올 때도 <b>E</b>를 누르면 된다.</li>
-            <li>손전등에는 <b>배터리</b>가 있다. 남쪽 시작 대피소(<b>안전지대</b>)의 충전소에서 충전하라.</li>
-            <li>안전지대 안에서는 괴물이 너를 해칠 수 없다.</li>
-            <li>마이크가 있으면 <b>실제 목소리도</b> 소음이 된다.</li>
+            <li>이름 없는 창고에 갇혔다. <b>분전기 5개</b>를 재기동해 격리구역 <b>출입 철문</b>의 전원을 복구하고 탈출하라.</li>
+            <li>손전등이 없으면 <b>거의 아무것도 보이지 않는다</b>. 꺼져 있다면 먼저 켜라.</li>
+            <li>청취자는 <b>소리</b>와 <b>시야</b>로 너를 추적한다. 뛰거나 점프하면 멀리서도 들리고, 소리를 내는 한 멈추지 않는다.</li>
+            <li>그것은 <b>숨은 너를 보지 못한다</b>. 들킬 듯하면 사물함·책상 밑 등 <b>은신처</b>에 숨어라. 나올 땐 <b>E</b>.</li>
+            <li>손전등에는 <b>배터리</b>가 있다. 남쪽 대피소(<b>안전지대</b>)의 충전소에서 보급하라.</li>
+            <li>안전지대 안에서는 청취자조차 너에게 손댈 수 없다.</li>
+            <li>마이크를 켜면 네 <b>실제 목소리</b>마저 사냥감이 된다.</li>
           </ul>
         </div>
       </div>
@@ -180,7 +181,7 @@
       <p class="flavor">그것이 너의 숨소리를 들었다.</p>
       <div class="death-stats">
         <div><span>생존 시간</span><b id="stat-time">0:00</b></div>
-        <div><span>모은 퓨즈</span><b id="stat-fuse">0</b></div>
+        <div><span>모은 분전기</span><b id="stat-fuse">0</b></div>
       </div>
       <button id="btn-respawn" class="big-btn">다시 숲으로</button>
     </div>

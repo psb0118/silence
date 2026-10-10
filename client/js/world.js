@@ -18,6 +18,7 @@ const C = {
 };
 
 const SAFE = CONFIG.safeZone;
+const _RED = new THREE.Color(0xdd2233);   // 청취자가 가까우면 조명에 스며드는 붉은 색
 
 export class World {
   constructor(scene, qualityName = "medium") {
@@ -29,7 +30,9 @@ export class World {
     this.fuses = [];
     this.hidingSpots = [];
     this.lamps = [];
+    this.mists = [];
     this.time = 0;
+    this.distress = null;   // 청취자의 위치 (조명 붉은 스트로브 연출용)
 
     this.safeZone = SAFE;
     this.compound = C;
@@ -41,6 +44,7 @@ export class World {
     this._buildForest();
     this._buildSafeShelter();
     this._buildCompound();
+    this._buildFog();
     this._buildFuses();
     this._buildGate();
   }
@@ -319,6 +323,30 @@ export class World {
     this.circles.push({ x, z, r: 0.5 * scale });
   }
 
+  /* ---------- 바닥에 드리운 낮은 안개 ---------- */
+  _buildFog() {
+    const geo = new THREE.PlaneGeometry(72, 36, 1, 1);
+    geo.rotateX(-Math.PI / 2);
+    const spots = [
+      [-33, -2], [0, 8], [0, -30], [0, 17],
+      [-33, -27], [33, -27], [-33, 1], [33, 1]
+    ];
+    for (let i = 0; i < spots.length; i++) {
+      const [x, z] = spots[i];
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0x7d92b2, transparent: true,
+        opacity: 0.045 + Math.sin(i * 2.7) * 0.012,
+        depthWrite: false, fog: false, side: THREE.DoubleSide
+      });
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, this.heightAt(x, z) + 0.22, z);
+      m.rotation.z = (i * 1.7) % (Math.PI * 2);
+      m.scale.set(0.8 + ((i * 31) % 10) / 10, 1, 0.8 + ((i * 13) % 10) / 10);
+      this.scene.add(m);
+      this.mists.push(m);
+    }
+  }
+
   /* ============================================================
    *  시작 대피소 (안전지대)
    * ============================================================ */
@@ -348,7 +376,7 @@ export class World {
       new THREE.MeshStandardMaterial({ color: 0xfff0d0, emissive: 0xffd9a0, emissiveIntensity: 2.4 }));
     bulb.position.copy(lamp.position);
     this.scene.add(bulb);
-    this.lamps.push({ light: lamp, mat: bulb.material, base: 26, phase: rand(0, 6), speed: 1.0, flicker: 0.08 });
+    this.lamps.push({ light: lamp, mat: bulb.material, base: 22, phase: rand(0, 6), speed: 1.0, flicker: 0.08, color: new THREE.Color(0xffd9a0), x: cx, z: cz });
 
     // 작업대 + 의자
     this._desk(cx - 3.4, cz - 3.2, 0, woodMat, metalMat);
@@ -394,8 +422,8 @@ export class World {
    *  시설 구역 (스파인 복도 + 6개 방)
    * ============================================================ */
   _buildCompound() {
-    this.wallMat = new THREE.MeshStandardMaterial({ color: 0x565b60, roughness: 0.95 });
-    this.rustMat = new THREE.MeshStandardMaterial({ color: 0x6a4d38, roughness: 0.85, metalness: 0.25 });
+    this.wallMat = new THREE.MeshStandardMaterial({ color: 0x3c4147, roughness: 1.0 });
+    this.rustMat = new THREE.MeshStandardMaterial({ color: 0x75452f, roughness: 0.85, metalness: 0.25 });
     this.metalMat = new THREE.MeshStandardMaterial({ color: 0x59616c, roughness: 0.5, metalness: 0.7 });
     this.woodMat = new THREE.MeshStandardMaterial({ color: 0x5a4a30, roughness: 0.9 });
     this.pipeMat = new THREE.MeshStandardMaterial({ color: 0x4a4f55, roughness: 0.6, metalness: 0.6 });
@@ -445,6 +473,9 @@ export class World {
     this._lamp(0, 8, 0xff6a4a, 16, 20);      // 리셉션 (붉은 비상등)
     this._lamp(0, -30, 0x9fd0ff, 15, 24);    // machine hall
     this._lamp(0, 17, 0xffd0a0, 10, 16);     // 입구
+    // 처참한 붉은 비상등 (음습한 방)
+    this._lamp(-33, -27, 0xd7263d, 10, 18);
+    this._lamp(33, -27, 0xd7263d, 9, 16);
 
     // ---- 방별 가구/프롭/은신처 ----
     this._furnishStorage(-33, (OZ0 + spineN) / 2, 26, 46);   // N1
@@ -511,14 +542,15 @@ export class World {
 
   _lamp(x, z, color, intensity, dist) {
     const y = this.heightAt(x, z) + 3.0;
-    const light = new THREE.PointLight(color, intensity, dist, 1.7);
+    const lc = new THREE.Color(color);
+    const light = new THREE.PointLight(lc.clone(), intensity, dist, 1.7);
     light.position.set(x, y, z);
     this.scene.add(light);
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8),
-      new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: color, emissiveIntensity: 2.4 }));
+      new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: lc.clone(), emissiveIntensity: 2.4 }));
     bulb.position.set(x, y, z);
     this.scene.add(bulb);
-    this.lamps.push({ light, mat: bulb.material, base: intensity, phase: rand(0, 6), speed: rand(6, 13), flicker: rand(0.15, 0.4) });
+    this.lamps.push({ light, mat: bulb.material, base: intensity, phase: rand(0, 6), speed: rand(6, 13), flicker: rand(0.15, 0.4), color: lc, x, z });
   }
 
   /* ---------- 방 가구 ---------- */
@@ -800,7 +832,7 @@ export class World {
       new THREE.MeshStandardMaterial({ color: 0xff3333, emissive: 0xff2222, emissiveIntensity: 1.6 }));
     tip.position.set(x, y + 9.1, z);
     this.scene.add(tip);
-    this.lamps.push({ light: null, mat: tip.material, base: 1.6, phase: 0, speed: 1.4, flicker: 1.4 });
+    this.lamps.push({ light: null, mat: tip.material, base: 1.6, phase: 0, speed: 1.4, flicker: 1.4, color: new THREE.Color(0xff2222), x, z });
     this.circles.push({ x, z, r: 0.3 });
   }
 
@@ -953,14 +985,35 @@ export class World {
     for (const m of this.grassMaterials) {
       if (m.userData.shader) m.userData.shader.uniforms.uTime.value = elapsed;
     }
+    // 낮게 드리운 안개가 천천히 흘러간다
+    const mist = this.mists;
+    for (let i = 0; i < mist.length; i++) {
+      mist[i].position.x += Math.sin(elapsed * 0.22 + i * 1.7) * dt * 0.5;
+      mist[i].position.z += Math.cos(elapsed * 0.17 + i * 2.3) * dt * 0.35;
+    }
+    const red = _RED;
+    const dd = this.distress;
     for (const l of this.lamps) {
+      let distress = 0;
+      if (dd && l.light) {
+        distress = clamp(1 - Math.hypot(l.x - dd.x, l.z - dd.z) / 20, 0, 1);
+      }
       const f = l.flicker;
-      if (f === 0) continue;
       const v = 0.5 + 0.5 * Math.sin(elapsed * l.speed + l.phase);
       const k = 1 - f * (0.5 + 0.5 * Math.sin(elapsed * (l.speed * 2.3) + l.phase * 1.7));
-      const val = Math.max(0.15, v) * k;
+      let val = Math.max(0.15, v) * k;
+      if (distress > 0) val *= 0.35 + 0.65 * Math.sin(elapsed * 27); // 붉은 스트로브
       if (l.light) l.light.intensity = l.base * (0.55 + 0.45 * val);
       if (l.mat && l.mat.emissiveIntensity !== undefined) l.mat.emissiveIntensity = l.base * 0.9 * (0.4 + 0.6 * val);
+      if (l.light) {
+        if (distress > 0.01) {
+          l.light.color.copy(l.color).lerp(red, 0.4 + 0.5 * distress);
+          if (l.mat.emissive) l.mat.emissive.copy(l.color).lerp(red, 0.5 * distress);
+        } else {
+          l.light.color.copy(l.color); // 청취자가 떠나면 원래 색으로 복귀
+          if (l.mat.emissive) l.mat.emissive.copy(l.color);
+        }
+      }
     }
   }
 }
