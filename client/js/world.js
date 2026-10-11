@@ -29,6 +29,8 @@ export class World {
     this.grassMaterials = [];
     this.fuses = [];
     this.hidingSpots = [];
+    this.drawers = [];
+    this.lockedDoors = [];
     this.lamps = [];
     this.mists = [];
     this.time = 0;
@@ -46,6 +48,7 @@ export class World {
     this._buildCompound();
     this._buildFog();
     this._buildFuses();
+    this._buildDoorsAndLoot();
     this._buildGate();
   }
 
@@ -860,6 +863,109 @@ export class World {
     }
   }
 
+  /* ---------- 서랍 / 잠긴 문 / 전리품 ---------- */
+  _buildDoorsAndLoot() {
+    // 서랍 (뒤져서 열쇠/배터리 획득) — lootId는 Inventory ITEM id와 일치
+    // 1. 시작 대피소: 열쇠(확정 확보용)
+    this._drawer(2.6, 40.6, Math.PI, "key", "열쇠");
+    // 2~6. 시설 내부
+    this._drawer(-40, 15.4, 0, "battery", "예비 배터리");       // S1 숙소
+    this._drawer(-40, -8.5, 0, "key", "열쇠");                  // N1 저장고
+    this._drawer(14.5, -8.5, -Math.PI / 2, "battery", "예비 배터리"); // N2 기계실
+    this._drawer(40, -6.5, 0, "battery", "예비 배터리");        // N3 사무실
+    this._drawer(-14, 14.5, 0, "battery", "예비 배터리");       // S2 리셉션
+
+    // 잠긴 문: S3 창고 입구(복도→창고). 열쇠 1개 필요.
+    this._lockedDoor(33, C.spineS, "x", 4.0, "key", "창고 문");
+  }
+
+  _drawer(x, z, yaw, lootId, lootName) {
+    const y = this.heightAt(x, z);
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.95, 0.5),
+      new THREE.MeshStandardMaterial({ color: 0x50463a, roughness: 0.85 }));
+    body.position.y = 0.6; body.castShadow = true; body.userData.castShadow = true;
+    g.add(body);
+    const face = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.34, 0.06),
+      new THREE.MeshStandardMaterial({ color: 0x5c5142, roughness: 0.75 }));
+    face.position.set(0, 0.76, 0.28);
+    face.castShadow = true; face.userData.castShadow = true;
+    g.add(face);
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.05, 0.05), this.metalMat);
+    handle.position.set(0, 0.76, 0.33);
+    g.add(handle);
+    g.position.set(x, y, z); g.rotation.y = yaw;
+    this.scene.add(g);
+
+    const box = { minX: x - 0.48, maxX: x + 0.48, minZ: z - 0.3, maxZ: z + 0.3 };
+    this.boxes.push(box);
+    const rec = { x, z, yaw, group: g, face, box, lootId, lootName, searched: false, opened: false };
+    this.drawers.push(rec);
+    return rec;
+  }
+
+  openDrawer(d) {
+    if (!d || d.opened) return;
+    d.opened = true;
+  }
+
+  _lockedDoor(x, z, axis, width, keyId, label) {
+    const y = this.heightAt(x, z);
+    const h = 2.6;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, h, 0.22),
+      new THREE.MeshStandardMaterial({ color: 0x2f363d, roughness: 0.5, metalness: 0.7 }));
+    mesh.position.set(x, y + h / 2 + 0.02, z);
+    mesh.castShadow = true; mesh.userData.castShadow = true;
+    this.scene.add(mesh);
+
+    const ind = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0x660000, emissiveIntensity: 1.4 }));
+    ind.position.set(x, y + h + 0.18, z);
+    this.scene.add(ind);
+
+    const w = axis === "x" ? width : 0.24;
+    const dd = axis === "x" ? 0.24 : width;
+    const box = { minX: x - w / 2, maxX: x + w / 2, minZ: z - dd / 2, maxZ: z + dd / 2 };
+    this.boxes.push(box);
+
+    const rec = { x, z, axis, width, mesh, box, indicator: ind, keyId, label, open: false };
+    this.lockedDoors.push(rec);
+    return rec;
+  }
+
+  openLockedDoor(door) {
+    if (!door || door.open) return false;
+    door.open = true;
+    door.mesh.visible = false;
+    if (door.indicator) {
+      door.indicator.material.color.setHex(0x66ff99);
+      door.indicator.material.emissive.setHex(0x22cc66);
+      door.indicator.material.emissiveIntensity = 2.0;
+    }
+    this.boxes = this.boxes.filter((b) => b !== door.box);
+    return true;
+  }
+
+  // 새 게임을 시작할 때 퍼즐/전리품 상태를 초기화
+  resetInteractive() {
+    for (const d of this.drawers) {
+      d.searched = false; d.opened = false;
+      d.face.position.z = 0.28;
+    }
+    for (const door of this.lockedDoors) {
+      if (door.open) {
+        door.open = false;
+        door.mesh.visible = true;
+        door.box && this.boxes.push(door.box);
+      }
+      if (door.indicator) {
+        door.indicator.material.color.setHex(0xff4444);
+        door.indicator.material.emissive.setHex(0x660000);
+        door.indicator.material.emissiveIntensity = 1.4;
+      }
+    }
+  }
+
   /* ---------- 출구 철문 ---------- */
   _buildGate() {
     const gx = 0, gz = -60;
@@ -993,6 +1099,12 @@ export class World {
     }
     const red = _RED;
     const dd = this.distress;
+    // 서랍 열림 애니메이션
+    for (let i = 0; i < this.drawers.length; i++) {
+      const dr = this.drawers[i];
+      const target = dr.opened ? 0.44 : 0.28;
+      dr.face.position.z += (target - dr.face.position.z) * Math.min(1, dt * 9);
+    }
     for (const l of this.lamps) {
       let distress = 0;
       if (dd && l.light) {

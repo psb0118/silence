@@ -61,6 +61,13 @@ export class Monster {
     this._syncModel();
   }
 
+  // 월드 구조(예: 잠긴 문 개방)가 바뀌면 경로 탐색 격자를 다시 만든다
+  rebuildGrid() {
+    this.grid = new Grid(this.world, 1.8, this.radius + 0.2);
+    this._path = [];
+    this._repathTimer = 0;
+  }
+
   /* ================= 모델 ================= */
   _buildModel() {
     const root = new THREE.Group();

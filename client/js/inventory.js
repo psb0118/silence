@@ -35,4 +35,15 @@ export class Inventory {
     }
     return false;
   }
+  takeAt(i) {
+    const s = this.slots[i];
+    if (!s || s.count <= 0) return null;
+    const item = { id: s.id, name: s.name, count: 1 };
+    s.count -= 1;
+    if (s.count <= 0) { s.count = 0; s.id = null; s.name = ""; }
+    return item;
+  }
+  clear() {
+    for (let i = 0; i < this.size; i++) this.slots[i] = { id: null, name: "", count: 0 };
+  }
 }

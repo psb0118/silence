@@ -300,7 +300,7 @@ export class UI {
       const slot = inv.slots[i];
       const el = document.createElement('div');
       el.className = 'inv-slot' + (slot.count > 0 ? ' filled' : '');
-      el.innerHTML = '<span class="keynum">' + (i + 1) + '</span>' + (slot.count > 0 ? '<span>' + slot.name + '</span><span class="count">' + slot.count + '</span>' : (i + 1));
+      el.innerHTML = '<span class="keynum">' + (i + 1) + '</span>' + (slot.count > 0 ? '<span>' + slot.name + '</span><span class="count">' + slot.count + '</span>' : '');
       this.invBar.appendChild(el);
     }
   }

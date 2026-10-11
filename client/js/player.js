@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { CONFIG } from "./config.js";
 import { Inventory } from "./inventory.js";
 import { damp, lerp, clamp } from "./util.js";
 

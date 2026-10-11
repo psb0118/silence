@@ -372,6 +372,9 @@ html, body {
 .inv-slot.filled { color: #e7edf3; }
 .inv-slot .keynum { position: absolute; left: 4px; top: 2px; font-size: 9px; opacity: 0.6; }
 .inv-slot .count { position: absolute; right: 4px; bottom: 2px; font-size: 9px; }
-.inv-empty { position: fixed; left: 50%; bottom: 70px; transform: translateX(-50%); color: #dbe4ec; background: rgba(8,11,17,0.72); border: 1px solid rgba(255,255,255,0.14); padding: 6px 10px; border-radius: 8px; z-index: 20; opacity: 0; transition: opacity .3s; }
-.inv-empty.show { opacity: 1; }
+#inv-empty {
+  position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%);
+  color: #ffd9d9; background: rgba(40,10,10,0.82); border: 1px solid rgba(255,80,80,0.35);
+  padding: 7px 14px; border-radius: 9px; z-index: 30; font-size: 13px;
+}
 
