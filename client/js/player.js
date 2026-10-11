@@ -84,7 +84,7 @@ export class Player {
     this.spot = new THREE.SpotLight(0xfff2d6, 0.0, 58, 0.5, 0.45, 1.15);
     this.spot.position.set(0, 0, 0);
     this.spot.castShadow = true;
-    this.spot.shadow.mapSize.set(1024, 1024);
+    this.spot.shadow.mapSize.set(512, 512);
     this.spot.shadow.camera.near = 0.3;
     this.spot.shadow.camera.far = 58;
     this.spot.shadow.bias = -0.0012;

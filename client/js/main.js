@@ -75,6 +75,7 @@ const player = new Player(camera, world, noise, audio, settings);
 const monster = new Monster(scene, world, audio, noise);
 monster.onCatch = onCaught;
 const ui = new UI();
+ui.attach(world, player, monster);
 
 noise.setMicSensitivity(settings.micSens);
 
@@ -114,8 +115,11 @@ function onKey(e, down) {
     case "KeyF":
       if (down && !e.repeat) toggleFlashlightUI();
       break;
-    case "KeyM":
+    case "KeyV":
       if (down && !e.repeat && game.phase === "playing") toggleMic();
+      break;
+    case "KeyM":
+      if (down && !e.repeat && game.phase === "playing") toggleMinimap();
       break;
     case "KeyE":
       if (down && !e.repeat && game.phase === "playing" && player.hidden) {
@@ -204,9 +208,11 @@ function startGame() {
   ui.hide(ui.death);
   ui.hide(ui.win);
   ui.setHudVisible(true);
+  mapOn = false;
+  ui.toggleMinimap(false);
   ui.setFlashlight(true);
-  ui.setObjective("분전기 5개를 찾아 전원을 복구하세요", 0, FUSE_TOTAL, null);
-  ui.toast("청취자가 너의 숨을 느꼈다. 조용히 움직여라.", 3400);
+  ui.setObjective("차단기 5개를 찾아 전원을 복구하세요", 0, FUSE_TOTAL, null);
+  ui.toast("괴물가 너의 숨을 느꼈다. 조용히 움직여라.", 3400);
   if (noise.micEnabled) noise.attachMic();
   lockPointer();
 }
@@ -287,6 +293,14 @@ function toggleMic() {
   ui.toast(on ? "마이크 켜짐 — 목소리가 괴물을 유인합니다" : "마이크 꺼짐", 2200);
 }
 
+let mapOn = false;
+function toggleMinimap() {
+  if (game.phase !== "playing") return;
+  mapOn = !mapOn;
+  ui.toggleMinimap(mapOn);
+  ui.toast(mapOn ? "지도 열기 (M으로 닫기)" : "지도 닫기", 1200);
+}
+
 /* ================= 목표 / 상호작용 ================= */
 function updateObjectives(dt) {
   // 가장 가까운 퓨즈
@@ -319,7 +333,7 @@ function updateObjectives(dt) {
     }
   }
 
-  if (nearest && nd < CONFIG.interaction.pickupRange) { target = { type: "fuse", fuse: nearest }; label = "분전기 회수"; }
+  if (nearest && nd < CONFIG.interaction.pickupRange) { target = { type: "fuse", fuse: nearest }; label = "차단기 회수"; }
   const gd = Math.hypot(world.exit.x - player.x, world.exit.z - player.z);
   if (game.exitPowered && gd < CONFIG.interaction.gateRange) { target = { type: "gate" }; label = "철문 열고 탈출"; }
 
@@ -335,7 +349,7 @@ function updateObjectives(dt) {
     label = player.inventory.hasKey() ? `${nearDoor.label} 열기 (열쇠)` : `${nearDoor.label} — 잠김 (열쇠 필요)`;
   }
 
-  // 서랍
+  // 서랍 (2단계: 열기 → 아이템 있으면 줍기)
   let nearDrawer = null, drD = Infinity;
   for (const dr of world.drawers) {
     if (dr.searched) continue;
@@ -343,8 +357,13 @@ function updateObjectives(dt) {
     if (d < drD) { drD = d; nearDrawer = dr; }
   }
   if (nearDrawer && drD < CONFIG.interaction.pickupRange) {
-    target = { type: "drawer", drawer: nearDrawer };
-    label = "서랍 뒤지기";
+    if (!nearDrawer.opened) {
+      target = { type: "drawer", drawer: nearDrawer, phase: "open" };
+      label = "서랍 열기";
+    } else {
+      target = { type: "drawer", drawer: nearDrawer, phase: "take" };
+      label = nearDrawer.lootId ? "아이템 줍기 (E)" : "서랍 닫고 돌아가기";
+    }
   }
 
   const holdingE = !!eKeyDown;
@@ -355,14 +374,14 @@ function updateObjectives(dt) {
     game.interactTarget = target;
     const time = target.type === "fuse" ? CONFIG.interaction.pickupTime
       : target.type === "hide" ? CONFIG.interaction.hideTime
-      : target.type === "drawer" ? 0.9
+      : target.type === "drawer" ? (target.phase === "take" ? 0.5 : 0.9)
       : target.type === "lockedDoor" ? 0.8
       : 1.4;
     game.interactHold += dt / time;
     if (game.interactHold >= 1) {
       if (target.type === "fuse") collectFuse(target.fuse);
       else if (target.type === "hide") { player.enterHide(target.hide); noise.drainEvents(); }
-      else if (target.type === "drawer") searchDrawer(target.drawer);
+      else if (target.type === "drawer") searchDrawer(target.drawer, target.phase === "take");
       else if (target.type === "lockedDoor") tryOpenDoor(target.door);
       else winGame();
       game.interactHold = 0;
@@ -381,7 +400,7 @@ function updateObjectives(dt) {
   if (game.exitPowered) {
     ui.setObjective("격리 철문으로 탈출하라", game.collected, FUSE_TOTAL, null);
   } else {
-    ui.setObjective("분전기 5개를 찾아 전원을 복구하세요", game.collected, FUSE_TOTAL, nearest ? nd : null);
+    ui.setObjective("차단기 5개를 찾아 전원을 복구하세요", game.collected, FUSE_TOTAL, nearest ? nd : null);
   }
 }
 
@@ -398,7 +417,7 @@ function collectFuse(f) {
     ui.toast("전원 복구 — 격리 철문의 잠금이 풀렸다", 3600);
     ui.setObjective("격리 철문으로 탈출하라", game.collected, FUSE_TOTAL, null);
   } else {
-    ui.toast(`분전기 ${game.collected}/${FUSE_TOTAL} 재기동`, 1600);
+    ui.toast(`차단기 ${game.collected}/${FUSE_TOTAL} 재기동`, 1600);
   }
 }
 
@@ -426,8 +445,27 @@ function useSlot(i) {
   ui.setInventory(inv);
 }
 
-function searchDrawer(d) {
-  if (!d || d.searched) return;
+function searchDrawer(d, take) {
+  if (!d) return;
+  if (!take) {
+    // 1단계: 열기
+    if (!d.opened) {
+      world.openDrawer(d);
+      audio.blip(520, 0.1);
+      noise.addImpulse(0.16, player.x, player.z, "search");
+      if (d.lootId === null) {
+        // 빈 서랍 → 닫고 넘어가기
+        d.searched = true;
+        d.opened = false;
+        audio.blip(220, 0.1);
+        ui.toast("서랍이 비어 있다", 1500);
+      }
+    }
+    return;
+  }
+  // 2단계: 아이템 줍기 (빈 서랍은 자동으로 닫힘)
+  if (d.searched) return;
+  if (d.lootId === null) { d.searched = true; d.opened = false; return; }
   const res = player.inventory.add(d.lootId, d.lootName, 1);
   if (!res.ok) {
     audio.blip(200, 0.12);
@@ -435,7 +473,7 @@ function searchDrawer(d) {
     return;
   }
   d.searched = true;
-  world.openDrawer(d);
+  d.opened = false; // 획득 후 닫기
   if (d.lootId === "key") audio.blip(1320, 0.18); else audio.blip(980, 0.14);
   noise.addImpulse(0.28, player.x, player.z, "search");
   ui.setInventory(player.inventory);
@@ -557,12 +595,12 @@ function loop() {
     audio.heartbeat(fear, dt);
 
     // 경고 배너
-    if (monster.state === STATE.CHASE && dist < 34) ui.setAlert("도망쳐 — 청취자가 온다");
-    else if (monster.state === STATE.INVESTIGATE && dist < 20) ui.setAlert("청취자가 소리 방향으로 접근한다");
-    else if (monster.state === STATE.SEARCH && dist < 14) ui.setAlert("청취자가 은신처를 뒤진다");
+    if (monster.state === STATE.CHASE && dist < 34) ui.setAlert("도망쳐 — 괴물가 온다");
+    else if (monster.state === STATE.INVESTIGATE && dist < 20) ui.setAlert("괴물가 소리 방향으로 접근한다");
+    else if (monster.state === STATE.SEARCH && dist < 14) ui.setAlert("괴물가 은신처를 뒤진다");
     else ui.setAlert(null);
 
-    // 청취자가 다가오면 조명이 '텔타'처럼 붉게 번져간다
+    // 괴물가 다가오면 조명이 '텔타'처럼 붉게 번져간다
     world.distress = (monster.state === STATE.CHASE || monster.state === STATE.ATTACK)
       ? { x: monster.x, z: monster.z }
       : null;

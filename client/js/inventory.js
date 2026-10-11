@@ -1,7 +1,7 @@
 export const ITEM = {
   KEY: { id: "key", name: "키" },
   BATTERY: { id: "battery", name: "배터리" },
-  FUSE: { id: "fuse", name: "분전기" }
+  FUSE: { id: "fuse", name: "차단기" }
 };
 
 export class Inventory {

@@ -18,7 +18,7 @@ const C = {
 };
 
 const SAFE = CONFIG.safeZone;
-const _RED = new THREE.Color(0xdd2233);   // 청취자가 가까우면 조명에 스며드는 붉은 색
+const _RED = new THREE.Color(0xdd2233);   // 괴물이 가까우면 조명에 스며드는 붉은 색
 
 export class World {
   constructor(scene, qualityName = "medium") {
@@ -32,9 +32,11 @@ export class World {
     this.drawers = [];
     this.lockedDoors = [];
     this.lamps = [];
+    this.walls = [];  // 미니맵용 벽 선분
+    this.rooms = [];  // 미니맵용 방 목록
     this.mists = [];
     this.time = 0;
-    this.distress = null;   // 청취자의 위치 (조명 붉은 스트로브 연출용)
+    this.distress = null;   // 괴물의 위치 (조명 붉은 스트로브 연출용)
 
     this.safeZone = SAFE;
     this.compound = C;
@@ -127,7 +129,7 @@ export class World {
     const moon = new THREE.DirectionalLight(0x7d93c2, 0.32);
     moon.position.set(-60, 90, -80);
     moon.castShadow = this.quality.shadows;
-    moon.shadow.mapSize.set(1024, 1024);
+    moon.shadow.mapSize.set(512, 512);
     moon.shadow.camera.near = 1;
     moon.shadow.camera.far = 300;
     const s = 110;
@@ -275,7 +277,19 @@ export class World {
     const leafMat = new THREE.MeshStandardMaterial({ color: 0x2f4a37, roughness: 1 });
     const rockMat = new THREE.MeshStandardMaterial({ color: 0x5d646e, roughness: 0.95, metalness: 0.05 });
 
-    for (let i = 0; i < 84; i++) {
+    // 종류별 InstancedMesh로 합쳐 그리기 호출을 줄인다 (렉 최적화)
+    const N = 84;
+    const trunkGeo = new THREE.CylinderGeometry(1, 1.75, 1, 6);
+    const coneGeo = new THREE.ConeGeometry(1, 1, 7);   // 3단 원뿔 + 로컬 스케일
+    const rockGeo = new THREE.IcosahedronGeometry(1, 0);
+    const dm = new THREE.Object3D();
+    const make = (geo, mat, count) => { const im = new THREE.InstancedMesh(geo, mat, count); im.castShadow = true; im.receiveShadow = true; return im; };
+    const trunks = make(trunkGeo, trunkMat, N);
+    const coneA = make(coneGeo, leafMat, N), coneB = make(coneGeo, leafMat, N), coneC = make(coneGeo, leafMat, N);
+    const rocks = make(rockGeo, rockMat, 34);
+    let ci = 0, ri = 0;
+
+    for (let i = 0; i < N; i++) {
       const a = rng() * Math.PI * 2;
       const r = 14 + rng() * 48;
       const x = Math.cos(a) * r;
@@ -283,7 +297,25 @@ export class World {
       if (Math.hypot(x, z) < 8) continue;
       if (this.inCompound(x, z) || this.inSafeZone(x, z)) continue;
       const y = this.heightAt(x, z);
-      this._addTree(x, y, z, 0.8 + rng() * 0.8, rng, trunkMat, leafMat);
+      const scale = 0.8 + rng() * 0.8;
+      const trunkH = 3.2 * scale;
+      const rot = rng() * Math.PI * 2;
+
+      dm.position.set(x, y + trunkH / 2, z); dm.scale.set(0.16 * scale, trunkH, 0.16 * scale); dm.rotation.set(0, rot, 0);
+      dm.updateMatrix(); trunks.setMatrixAt(i, dm.matrix);
+      const coneDefs = [
+        [(1.7 * scale * 2), (1.9 * scale), 0, 0],
+        [(1.35 * scale * 2), (1.65 * scale), trunkH + (1.9 * scale) * 0.55, 0],
+        [(1.0 * scale * 2), (1.4 * scale), trunkH + (1.9 * scale) * 0.55 + (1.65 * scale) * 0.55, 0]
+      ];
+      for (let k = 0; k < 3; k++) {
+        const [cw, ch, oy] = coneDefs[k];
+        dm.position.set(x, y + oy + ch / 2, z); dm.scale.set(cw / 2, ch, cw / 2); dm.rotation.set(0, rot, 0);
+        dm.updateMatrix();
+        (k === 0 ? coneA : k === 1 ? coneB : coneC).setMatrixAt(i, dm.matrix);
+      }
+      this.circles.push({ x, z, r: 0.5 * scale });
+      ci++;
     }
 
     for (let i = 0; i < 34; i++) {
@@ -294,36 +326,15 @@ export class World {
       if (this.inCompound(x, z) || this.inSafeZone(x, z)) continue;
       const y = this.heightAt(x, z);
       const s = 0.5 + rng() * 1.6;
-      const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 0), rockMat);
-      rock.position.set(x, y + s * 0.35, z);
-      rock.rotation.set(rng() * 3, rng() * 3, rng() * 3);
-      rock.castShadow = true; rock.receiveShadow = true;
-      rock.userData.castShadow = true;
-      this.scene.add(rock);
+      dm.position.set(x, y + s * 0.35, z); dm.scale.setScalar(s); dm.rotation.set(rng() * 3, rng() * 3, rng() * 3);
+      dm.updateMatrix(); rocks.setMatrixAt(ri, dm.matrix);
       if (s > 0.8) this.circles.push({ x, z, r: s * 0.75 });
+      ri++;
     }
-  }
-
-  _addTree(x, y, z, scale, rng, trunkMat, leafMat) {
-    const g = new THREE.Group();
-    const trunkH = 3.2 * scale;
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16 * scale, 0.28 * scale, trunkH, 6), trunkMat);
-    trunk.position.y = trunkH / 2;
-    trunk.castShadow = true; trunk.userData.castShadow = true;
-    g.add(trunk);
-
-    for (let i = 0; i < 3; i++) {
-      const cr = (1.7 - i * 0.35) * scale;
-      const ch = (1.9 - i * 0.25) * scale;
-      const cone = new THREE.Mesh(new THREE.ConeGeometry(cr, ch, 7), leafMat);
-      cone.position.y = trunkH + i * ch * 0.55;
-      cone.rotation.y = rng() * 3;
-      cone.castShadow = true; cone.userData.castShadow = true;
-      g.add(cone);
-    }
-    g.position.set(x, y, z);
-    this.scene.add(g);
-    this.circles.push({ x, z, r: 0.5 * scale });
+    const park = (im, n) => { for (let i = n; i < im.count; i++) { dm.position.set(0, -50, 0); dm.scale.setScalar(0.001); dm.rotation.set(0, 0, 0); dm.updateMatrix(); im.setMatrixAt(i, dm.matrix); } im.instanceMatrix.needsUpdate = true; };
+    park(trunks, ci); park(coneA, ci); park(coneB, ci); park(coneC, ci); park(rocks, ri);
+    this.scene.add(trunks, coneA, coneB, coneC, rocks);
+    this.forest = { trunks, coneA, coneB, coneC, rocks };
   }
 
   /* ---------- 바닥에 드리운 낮은 안개 ---------- */
@@ -422,9 +433,15 @@ export class World {
   }
 
   /* ============================================================
-   *  시설 구역 (스파인 복도 + 6개 방)
+   *  시설 구역 (방 + 복도 구조)
+   *  - z 3개 대지: N실(-50~-30) / M실(-24~-4) / S실(2~18)
+   *  - N실과 M실 사이 '동서 복도 U', M실과 S실 사이 '동서 복도 D'
+   *  - 각 방은 복도에 1~2개의 문(갭)으로 연결되고, 방끼리도 옆문으로 연결
+   *  - 남쪽 외벽(중앙) → 입구, 북쪽 외벽(중앙, 기계실 뒤) → 출구 철문
    * ============================================================ */
   _buildCompound() {
+    this.walls = [];      // 미니맵용 벽 선분
+    this.rooms = [];      // 미니맵용 방 정보
     this.wallMat = new THREE.MeshStandardMaterial({ color: 0x3c4147, roughness: 1.0 });
     this.rustMat = new THREE.MeshStandardMaterial({ color: 0x75452f, roughness: 0.85, metalness: 0.25 });
     this.metalMat = new THREE.MeshStandardMaterial({ color: 0x59616c, roughness: 0.5, metalness: 0.7 });
@@ -432,61 +449,75 @@ export class World {
     this.pipeMat = new THREE.MeshStandardMaterial({ color: 0x4a4f55, roughness: 0.6, metalness: 0.6 });
 
     const H = C.wallH, T = C.wallT, M = this.wallMat;
-    const { OX0, OX1, OZ0, OZ1, spineN, spineS, divW, divE } = C;
+    const { OX0, OX1, OZ0, OZ1 } = C;
+    const door = (c, w) => ({ center: c, width: w });
 
     // ---- 외곽 벽 ----
-    // 남쪽(z=OZ1): 입구 갭
-    this._wallLine("x", OZ1, OX0, OX1, [{ center: 0, width: 5 }], H, T, M);
-    // 북쪽(z=OZ0): 출구 쪽 갭
-    this._wallLine("x", OZ0, OX0, OX1, [{ center: 0, width: 4 }], H, T, M);
-    // 서쪽 / 동쪽
+    this._wallLine("x", OZ1, OX0, OX1, [door(0, 5)], H, T, M);      // 남쪽: 입구
+    this._wallLine("x", OZ0, OX0, OX1, [door(0, 4)], H, T, M);      // 북쪽: 출구
     this._wallLine("z", OX0, OZ0, OZ1, [], H, T, M);
     this._wallLine("z", OX1, OZ0, OZ1, [], H, T, M);
 
-    // ---- 복도 벽 (북쪽 z=spineN, 남쪽 z=spineS) ----
-    // 북쪽: N1 / N2(2곳) / N3 로 통하는 문
-    this._wallLine("x", spineN, OX0, OX1, [
-      { center: -33, width: 4.2 },   // N1 storage
-      { center: -9, width: 5 },      // N2 hall
-      { center: 9, width: 5 },       // N2 hall
-      { center: 33, width: 4.2 }     // N3 office
-    ], H, T, M);
-    // 남쪽: S1 / S2(넓은 허브) / S3
-    this._wallLine("x", spineS, OX0, OX1, [
-      { center: -33, width: 4.2 },   // S1 dorm
-      { center: 0, width: 7 },       // S2 reception
-      { center: 33, width: 4.2 }     // S3 store
-    ], H, T, M);
+    // ---- 방 ↔ 복도 연결 벽 ----
+    this._wallLine("x", -30, OX0, OX1, [door(-30, 3.5), door(0, 4), door(30, 3.5)], H, T, M); // N실 남벽 / 복도U 북벽
+    this._wallLine("x", -26, OX0, OX1, [door(-30, 3.5), door(0, 4), door(30, 3.5)], H, T, M); // 복도U 남벽 / M실 북벽
+    this._wallLine("x", -4, OX0, OX1, [door(-30, 3.5), door(0, 4), door(30, 3.5)], H, T, M);  // M실 남벽 / 복도D 북벽
+    this._wallLine("x", 0, OX0, OX1, [door(-30, 3.5), door(0, 4), door(30, 4)], H, T, M);     // 복도D 남벽 / S실 북벽
 
-    // ---- 방 분할 벽 ----
-    this._wallLine("z", divW, OZ0, spineN, [], H, T, M);  // 북서
-    this._wallLine("z", divE, OZ0, spineN, [], H, T, M);  // 북동
-    this._wallLine("z", divW, spineS, OZ1, [], H, T, M);  // 남서
-    this._wallLine("z", divE, spineS, OZ1, [], H, T, M);  // 남동
+    // ---- 방 사이 벽 (옆문) ----
+    this._wallLine("z", -14, OZ0, -30, [door(-38, 3)], H, T, M);    // R1|R2
+    this._wallLine("z", 14, OZ0, -30, [door(-38, 3)], H, T, M);     // R2|R3
+    this._wallLine("z", -14, -24, -4, [door(-10, 3)], H, T, M);     // R4|R5
+    this._wallLine("z", 14, -24, -4, [door(-10, 3)], H, T, M);      // R5|R6
+    this._wallLine("z", -14, 2, OZ1, [door(7, 3)], H, T, M);        // R7|R8
+    this._wallLine("z", 14, 2, OZ1, [], H, T, M);                   // R8|R9 (만남 없음 → 잠긴 창고)
 
-    // ---- 지붕 (일부 방만 덮어 어둡게) ----
-    this._roof(-33, (OZ0 + spineN) / 2, 26, 46, M); // N1 storage
-    this._roof(33, (OZ0 + spineN) / 2, 26, 46, M);  // N3 office
-    this._roof(-33, (spineS + OZ1) / 2, 26, 16, M); // S1 dorm
-    this._roof(33, (spineS + OZ1) / 2, 26, 16, M);  // S3 store
-    this._roof(0, (spineS + OZ1) / 2, 40, 16, M);   // S2 reception
+    // ---- 지붕 (방만 덮고 복도는 흐린 밤하늘로 열림) ----
+    this._roof(-30, -40, 32, 20, M);   // R1
+    this._roof(0, -40, 28, 20, M);     // R2
+    this._roof(30, -40, 32, 20, M);    // R3
+    this._roof(-30, -14, 32, 20, M);   // R4
+    this._roof(0, -14, 28, 20, M);     // R5
+    this._roof(30, -14, 32, 20, M);    // R6
+    this._roof(-30, 10, 32, 16, M);    // R7
+    this._roof(0, 10, 28, 16, M);      // R8
+    this._roof(30, 10, 32, 16, M);     // R9
 
-    // ---- 랜드마크 조명 (손전등 없이도 랜드마크만 가늠 가능한 어두운 풀) ----
-    this._lamp(-33, -2, 0xffa040, 14, 22);   // 복도 중앙
-    this._lamp(0, 8, 0xff6a4a, 16, 20);      // 리셉션 (붉은 비상등)
-    this._lamp(0, -30, 0x9fd0ff, 15, 24);    // machine hall
-    this._lamp(0, 17, 0xffd0a0, 10, 16);     // 입구
-    // 처참한 붉은 비상등 (음습한 방)
-    this._lamp(-33, -27, 0xd7263d, 10, 18);
-    this._lamp(33, -27, 0xd7263d, 9, 16);
+    // ---- 랜드마크 조명 (발광 전용 — 렉 최적화) ----
+    this._lamp(-30, -28, 0xffa040, 12, 18);   // 복도U 서쪽
+    this._lamp(0, -28, 0xffd0a0, 13, 18);     // 복도U 중앙
+    this._lamp(30, -28, 0xffa040, 12, 18);    // 복도U 동쪽
+    this._lamp(-30, -2, 0xff6a4a, 12, 18);    // 복도D 서쪽(비상등)
+    this._lamp(0, -2, 0x9fd0ff, 13, 18);      // 복도D 중앙
+    this._lamp(30, -2, 0xff6a4a, 12, 18);     // 복도D 동쪽
+    this._lamp(-40, -40, 0xd7263d, 10, 16);   // R1 붉은 비상등
+    this._lamp(-40, -14, 0xd7263d, 10, 16);   // R4 붉은 비상등
+    this._lamp(0, -10, 0xffd9a0, 13, 18);     // R5 로비(따뜻한)
+    this._lamp(30, 8, 0xd7263d, 10, 16);      // R9 붉은 비상등
 
     // ---- 방별 가구/프롭/은신처 ----
-    this._furnishStorage(-33, (OZ0 + spineN) / 2, 26, 46);   // N1
-    this._furnishMachine(0, (OZ0 + spineN) / 2, 40, 46);     // N2
-    this._furnishOffice(33, (OZ0 + spineN) / 2, 26, 46);     // N3
-    this._furnishDorm(-33, (spineS + OZ1) / 2, 26, 16);      // S1
-    this._furnishReception(0, (spineS + OZ1) / 2, 40, 16);   // S2
-    this._furnishStore(33, (spineS + OZ1) / 2, 26, 16);      // S3
+    this._furnishStorage(-30, -40);   // R1 창고
+    this._furnishMachine(0, -40);     // R2 기계실
+    this._furnishOffice(30, -40);     // R3 사무실
+    this._furnishServer(-30, -14);    // R4 통신/서버실
+    this._furnishReception(0, -14);   // R5 로비/리셉션
+    this._furnishStore(30, -14);      // R6 저장고
+    this._furnishDorm(-30, 10);       // R7 숙소
+    this._furnishKitchen(0, 10);      // R8 휴게실/주방
+    this._furnishStore(30, 10);       // R9 잠긴 창고
+
+    // ---- 방 레지스트리 (미니맵) ----
+    this.rooms = [
+      { x: -30, z: -40, w: 32, d: 20, name: "창고" },
+      { x: 0, z: -40, w: 28, d: 20, name: "기계실" },
+      { x: 30, z: -40, w: 32, d: 20, name: "사무실" },
+      { x: -30, z: -14, w: 32, d: 20, name: "통신실" },
+      { x: 0, z: -14, w: 28, d: 20, name: "로비" },
+      { x: 30, z: -14, w: 32, d: 20, name: "저장고" },
+      { x: -30, z: 10, w: 32, d: 16, name: "숙소" },
+      { x: 0, z: 10, w: 28, d: 16, name: "휴게실" },
+      { x: 30, z: 10, w: 32, d: 16, name: "창고" }
+    ];
 
     // ---- 물탱크 / 안테나 (외부 랜드마크) ----
     this._waterTower(38, 34);
@@ -522,6 +553,9 @@ export class World {
       const w = axis === "x" ? (b - a) : t;
       const dd = axis === "x" ? t : (b - a);
       this._addBox(cx, cz, w, dd, h, mat);
+      // 미니맵용 벽 선분 (중심선)
+      if (axis === "x") this.walls.push({ x0: a, z0: fixed, x1: b, z1: fixed });
+      else this.walls.push({ x0: fixed, z0: a, x1: fixed, z1: b });
     }
   }
 
@@ -544,77 +578,106 @@ export class World {
   }
 
   _lamp(x, z, color, intensity, dist) {
-    const y = this.heightAt(x, z) + 3.0;
+    // 최적화: 정적 등은 실광원(PointLight) 대신 발광(emissive) 구로만 렌더링한다.
+    // 중첩되는 실광원이 많으면 셰이더 비용이 급증해 렉이 심해진다.
+    const y = this.heightAt(x, z) + 2.5;
     const lc = new THREE.Color(color);
-    const light = new THREE.PointLight(lc.clone(), intensity, dist, 1.7);
-    light.position.set(x, y, z);
-    this.scene.add(light);
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8),
       new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: lc.clone(), emissiveIntensity: 2.4 }));
     bulb.position.set(x, y, z);
     this.scene.add(bulb);
-    this.lamps.push({ light, mat: bulb.material, base: intensity, phase: rand(0, 6), speed: rand(6, 13), flicker: rand(0.15, 0.4), color: lc, x, z });
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeGlowTexture("#ffffff", "#000000"), transparent: true, depthWrite: false,
+      color: lc.clone(), opacity: 0.24, fog: false
+    }));
+    glow.scale.set(1.8, 1.8, 1);
+    glow.position.copy(bulb.position);
+    this.scene.add(glow);
+    this.lamps.push({ light: null, mat: bulb.material, glow, base: intensity, phase: rand(0, 6), speed: rand(6, 13), flicker: rand(0.15, 0.4), color: lc, x, z });
   }
 
-  /* ---------- 방 가구 ---------- */
-  _furnishStorage(cx, cz, w, d) {
-    const crates = [[-7, -12, 1.2], [-4.5, -13, 0.9], [-7, -2, 1.0], [7, -14, 1.4], [8, 8, 1.1], [4, 12, 1.0]];
+  /* ---------- 방 가구 (줄맞춤: 32×20/28×16 실 크기에 맞춘 콤팩트 배치) ---------- */
+  _furnishStorage(cx, cz) {
+    const crates = [[-5, -4, 1.2], [-7, 2, 1.0], [-6, 7, 1.1], [5, -6, 1.1], [6, 3, 1.0]];
     for (const [ox, oz, s] of crates) this._crate(cx + ox, cz + oz, s, this.woodMat);
-    this._shelf(cx + 9, cz - 6, -Math.PI / 2, 3.2, this.metalMat);
-    this._shelf(cx + 9, cz + 2, -Math.PI / 2, 3.2, this.metalMat);
+    this._shelf(cx - 7, cz - 4, Math.PI / 2, 3.2, this.metalMat);
+    this._shelf(cx + 7, cz + 5, -Math.PI / 2, 3.2, this.metalMat);
     // 은신: 사물함
-    this._locker(cx + 8, cz - 12, this._yawTo(-1, 0));
-    this._locker(cx + 8, cz - 14, this._yawTo(-1, 0));
-    this._locker(cx - 8, cz + 6, this._yawTo(1, 0));
-    this._barrel(cx - 6, cz + 10);
-    this._barrel(cx - 5, cz + 11);
+    this._locker(cx + 8, cz - 7, this._yawTo(-1, 0));
+    this._locker(cx - 8, cz - 8, this._yawTo(1, 0));
+    this._barrel(cx - 5, cz + 8);
+    this._barrel(cx + 8, cz + 8);
   }
 
-  _furnishMachine(cx, cz, w, d) {
-    this._generator(cx - 10, cz + 8);
-    this._generator(cx + 10, cz + 8);
-    this._generator(cx - 10, cz - 10);
+  _furnishMachine(cx, cz) {
+    this._generator(cx - 6, cz + 6);
+    this._generator(cx + 6, cz + 6);
+    this._generator(cx - 6, cz - 6);
     // 파이프 랙
     for (let i = 0; i < 3; i++) {
-      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 10, 8), this.pipeMat);
+      const p = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 8, 8), this.pipeMat);
       p.rotation.z = Math.PI / 2;
-      p.position.set(cx, this.heightAt(cx, cz - 16) + 1.6 + i * 0.35, cz - 16 + i * 0.32);
+      p.position.set(cx, this.heightAt(cx, cz - 6) + 1.6 + i * 0.35, cz - 6 + i * 0.32);
       p.rotation.x = 0.04;
       p.castShadow = true; p.userData.castShadow = true;
       this.scene.add(p);
     }
-    // 큰 개방 공간 → 크레이트 은신 코너
-    this._crate(cx - 16, cz + 14, 1.4, this.woodMat);
-    this._crate(cx - 14.6, cz + 14, 1.2, this.woodMat);
-    this._crate(cx - 15.5, cz + 15.4, 1.0, this.woodMat);
-    this._locker(cx - 16.4, cz + 16.6, this._yawTo(1, 1)); // 코너 사물함 은신
-    this._barrel(cx + 14, cz - 16);
-    this._barrel(cx + 12.6, cz - 16);
+    // 크레이트 은신 코너
+    this._crate(cx - 7, cz + 8, 1.4, this.woodMat);
+    this._crate(cx - 5.6, cz + 8, 1.2, this.woodMat);
+    this._locker(cx - 8, cz + 8, this._yawTo(1, 1)); // 코너 사물함 은신
+    this._barrel(cx + 8, cz - 8);
+    this._barrel(cx + 6.6, cz - 8);
   }
 
-  _furnishOffice(cx, cz, w, d) {
+  _furnishOffice(cx, cz) {
     // 책상 (밑 숨기)
-    this._deskHide(cx - 6, cz - 10, 0);
-    this._deskHide(cx - 6, cz - 4, 0);
-    this._deskHide(cx + 5, cz - 12, Math.PI);
+    this._deskHide(cx - 6, cz - 6, 0);
+    this._deskHide(cx - 6, cz + 2, 0);
     this._deskHide(cx + 5, cz - 6, Math.PI);
-    this._desk(cx - 6, cz + 12, 0, this.woodMat, this.metalMat);
-    this._chair(cx - 4.4, cz + 12, 1.4, this.woodMat);
-    this._shelf(cx + 9, cz + 8, -Math.PI / 2, 3.0, this.metalMat);
-    this._cabinet(cx - 9, cz + 2, this._yawTo(1, 0));
-    this._crate(cx + 8, cz + 14, 1.0, this.woodMat);
+    this._deskHide(cx + 5, cz + 2, Math.PI);
+    this._desk(cx - 6, cz + 7, 0, this.woodMat, this.metalMat);
+    this._chair(cx - 4.4, cz + 7, 1.4, this.woodMat);
+    this._shelf(cx + 8, cz + 7, -Math.PI / 2, 3.0, this.metalMat);
+    this._cabinet(cx - 9, cz + 7, this._yawTo(1, 0));
+    this._crate(cx + 9, cz - 8, 1.0, this.woodMat);
   }
 
-  _furnishDorm(cx, cz, w, d) {
-    for (let i = 0; i < 3; i++) this._bed(cx - 9, cz - 4 + i * 4.5, this.woodMat);
-    for (let i = 0; i < 3; i++) this._bed(cx + 9, cz - 4 + i * 4.5, this.woodMat);
+  _furnishServer(cx, cz) {
+    // 서버 랙(선반) 2열 + 벽 캐비닛
+    this._shelf(cx - 7, cz - 6, -Math.PI / 2, 5, this.metalMat);
+    this._shelf(cx + 7, cz - 6, Math.PI / 2, 5, this.metalMat);
+    this._shelf(cx - 7, cz + 4, -Math.PI / 2, 5, this.metalMat);
+    this._shelf(cx + 7, cz + 4, Math.PI / 2, 5, this.metalMat);
+    this._cabinet(cx + 9, cz - 7, this._yawTo(-1, 0));
+    this._locker(cx - 9, cz + 7, this._yawTo(1, 0)); // 은신
+    this._crate(cx - 5, cz + 7, 1.0, this.woodMat);
+    this._barrel(cx + 5, cz + 7);
+    this._crate(cx + 9, cz + 8, 0.9, this.woodMat);
+  }
+
+  _furnishKitchen(cx, cz) {
+    // 주방: 긴 카운터 + 캐비닛 은신
+    this._addBox(cx - 2, cz + 5, 6, 1.2, 1.1, this.woodMat);
+    this._cabinet(cx - 8, cz + 5, this._yawTo(0, -1));   // 은신
+    this._cabinet(cx - 4, cz + 5, this._yawTo(0, -1));
+    this._shelf(cx + 8, cz + 1, Math.PI / 2, 5, this.metalMat);
+    this._chair(cx - 3, cz, 0.4, this.woodMat);
+    this._chair(cx + 4, cz, 0, this.woodMat);
+    this._crate(cx - 8, cz - 4, 1.0, this.woodMat);
+    this._barrel(cx + 6, cz - 4);
+  }
+
+  _furnishDorm(cx, cz) {
+    for (let i = 0; i < 3; i++) this._bed(cx - 7, cz - 4 + i * 4.5, this.woodMat);
+    for (let i = 0; i < 3; i++) this._bed(cx + 7, cz - 4 + i * 4.5, this.woodMat);
     this._locker(cx - 4, cz + 5, this._yawTo(0, -1));
     this._locker(cx - 2, cz + 5, this._yawTo(0, -1));
     this._cabinet(cx + 4, cz + 5, this._yawTo(0, -1));
     this._crate(cx + 2, cz - 5, 0.9, this.woodMat);
   }
 
-  _furnishReception(cx, cz, w, d) {
+  _furnishReception(cx, cz) {
     // 리셉션 카운터
     const counter = this._addBox(cx, cz - 3, 8, 1.0, 1.1, this.woodMat);
     counter.receiveShadow = true;
@@ -622,21 +685,21 @@ export class World {
     this._registerHide(cx + 2.5, cz - 3.7, Math.PI, "crawl", 0.6);
     this._registerHide(cx - 2.5, cz - 3.7, Math.PI, "crawl", 0.6);
     this._chair(cx - 3, cz + 1, 0.4, this.woodMat);
-    this._shelf(cx - 12, cz + 3, -Math.PI / 2, 3.4, this.metalMat);
-    this._shelf(cx + 12, cz + 3, Math.PI / 2, 3.4, this.metalMat);
-    this._crate(cx - 12, cz - 6, 1.1, this.woodMat);
-    this._crate(cx + 12, cz - 6, 1.1, this.woodMat);
+    this._shelf(cx - 11, cz + 3, -Math.PI / 2, 3.4, this.metalMat);
+    this._shelf(cx + 11, cz + 3, Math.PI / 2, 3.4, this.metalMat);
+    this._crate(cx - 11, cz - 6, 1.1, this.woodMat);
+    this._crate(cx + 11, cz - 6, 1.1, this.woodMat);
     // 안내 표지
     this._sign(cx, cz - 8, 0, 0xff5533);
   }
 
-  _furnishStore(cx, cz, w, d) {
+  _furnishStore(cx, cz) {
     this._shelf(cx, cz - 6, 0, 9, this.metalMat);
     this._shelf(cx - 6, cz + 3, -Math.PI / 2, 6, this.metalMat);
     this._shelf(cx + 6, cz + 3, Math.PI / 2, 6, this.metalMat);
-    this._locker(cx + 10, cz - 6, this._yawTo(-1, 0));
-    this._locker(cx + 10, cz - 4, this._yawTo(-1, 0));
-    this._locker(cx - 10, cz + 5, this._yawTo(1, 0));
+    this._locker(cx + 9, cz - 6, this._yawTo(-1, 0));
+    this._locker(cx + 9, cz - 4, this._yawTo(-1, 0));
+    this._locker(cx - 9, cz + 5, this._yawTo(1, 0));
     this._barrel(cx - 3, cz + 2);
     this._barrel(cx - 1.6, cz + 2);
     this._crate(cx + 3, cz + 5, 1.0, this.woodMat);
@@ -842,11 +905,11 @@ export class World {
   /* ---------- 퓨즈 ---------- */
   _buildFuses() {
     const spots = [
-      { x: -37, z: -26 },   // N1 저장고
-      { x: 0, z: -34 },     // N2 기계실
-      { x: 37, z: -26 },    // N3 사무실
-      { x: -37, z: 10 },    // S1 숙소
-      { x: 37, z: 10 }      // S3 창고
+      { x: -40, z: -42 },   // R1 창고
+      { x: 0, z: -34 },     // R2 기계실
+      { x: 40, z: -42 },    // R3 사무실
+      { x: -40, z: 12 },    // R7 숙소
+      { x: 40, z: 12 }      // R9 잠긴 창고
     ];
     const mat = new THREE.MeshStandardMaterial({ color: 0x7fe6c8, emissive: 0x2fd0a0, emissiveIntensity: 1.6, roughness: 0.4, metalness: 0.3 });
     for (const s of spots) {
@@ -868,15 +931,18 @@ export class World {
     // 서랍 (뒤져서 열쇠/배터리 획득) — lootId는 Inventory ITEM id와 일치
     // 1. 시작 대피소: 열쇠(확정 확보용)
     this._drawer(2.6, 40.6, Math.PI, "key", "열쇠");
-    // 2~6. 시설 내부
-    this._drawer(-40, 15.4, 0, "battery", "예비 배터리");       // S1 숙소
-    this._drawer(-40, -8.5, 0, "key", "열쇠");                  // N1 저장고
-    this._drawer(14.5, -8.5, -Math.PI / 2, "battery", "예비 배터리"); // N2 기계실
-    this._drawer(40, -6.5, 0, "battery", "예비 배터리");        // N3 사무실
-    this._drawer(-14, 14.5, 0, "battery", "예비 배터리");       // S2 리셉션
+    // 2~7. 시설 내부 (각 방)
+    this._drawer(-6, -42, Math.PI / 2, "battery", "예비 배터리");  // R1 창고
+    this._drawer(10, 6, Math.PI, "key", "열쇠");                   // R8 휴게실
+    this._drawer(38, -38, 0, "battery", "예비 배터리");            // R3 사무실
+    this._drawer(-40, 8, 0, "battery", "예비 배터리");             // R7 숙소
+    this._drawer(-8, -18, 0, "battery", "예비 배터리");            // R4 통신/서버실
+    this._drawer(40, -16, 0, "battery", "예비 배터리");            // R6 저장고
+    this._drawer(-8, -16, 0, null, null);                          // R5 로비 — 비어 있는 서랍
+    this._drawer(36, 10, -Math.PI / 2, "battery", "예비 배터리");  // R9 잠긴 창고
 
-    // 잠긴 문: S3 창고 입구(복도→창고). 열쇠 1개 필요.
-    this._lockedDoor(33, C.spineS, "x", 4.0, "key", "창고 문");
+    // 잠긴 문: R9 창고 북쪽 입구(복도D 남벽 z=0). 열쇠 1개 필요.
+    this._lockedDoor(30, 0, "x", 4.0, "key", "창고 문");
   }
 
   _drawer(x, z, yaw, lootId, lootName) {
@@ -1107,7 +1173,7 @@ export class World {
     }
     for (const l of this.lamps) {
       let distress = 0;
-      if (dd && l.light) {
+      if (dd) {
         distress = clamp(1 - Math.hypot(l.x - dd.x, l.z - dd.z) / 20, 0, 1);
       }
       const f = l.flicker;
@@ -1115,16 +1181,15 @@ export class World {
       const k = 1 - f * (0.5 + 0.5 * Math.sin(elapsed * (l.speed * 2.3) + l.phase * 1.7));
       let val = Math.max(0.15, v) * k;
       if (distress > 0) val *= 0.35 + 0.65 * Math.sin(elapsed * 27); // 붉은 스트로브
-      if (l.light) l.light.intensity = l.base * (0.55 + 0.45 * val);
       if (l.mat && l.mat.emissiveIntensity !== undefined) l.mat.emissiveIntensity = l.base * 0.9 * (0.4 + 0.6 * val);
-      if (l.light) {
-        if (distress > 0.01) {
-          l.light.color.copy(l.color).lerp(red, 0.4 + 0.5 * distress);
-          if (l.mat.emissive) l.mat.emissive.copy(l.color).lerp(red, 0.5 * distress);
-        } else {
-          l.light.color.copy(l.color); // 청취자가 떠나면 원래 색으로 복귀
-          if (l.mat.emissive) l.mat.emissive.copy(l.color);
-        }
+      if (l.mat.emissive) {
+        if (distress > 0.01) l.mat.emissive.copy(l.color).lerp(red, 0.15 + 0.6 * distress);
+        else l.mat.emissive.copy(l.color); // 괴물이 떠나면 원래 색으로 복귀
+      }
+      if (l.glow && l.glow.material) {
+        const cm = l.glow.material;
+        if (distress > 0.01) { cm.color.copy(l.color).lerp(red, 0.4 + 0.5 * distress); cm.opacity = 0.24 + 0.1 * Math.sin(elapsed * 27); }
+        else { cm.color.copy(l.color); cm.opacity = 0.24; }
       }
     }
   }

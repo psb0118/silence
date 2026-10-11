@@ -30,6 +30,10 @@ export class UI {
     this.hintToast = $("#hint-toast");
     this.invBar = $("#inventory-bar");
     this.invEmpty = $("#inv-empty");
+    this.minimap = $("#minimap");
+    this.minimapCtx = this.minimap && this.minimap.getContext("2d");
+    this.mapVisible = false;
+    this._w = null; this._p = null; this._m = null;
 
     this.start = $("#start");
     this.pause = $("#pause");
@@ -155,6 +159,123 @@ export class UI {
       this._damageTimer -= dt;
       if (this._damageTimer <= 0) this.damageFlash.style.opacity = "0";
     }
+    if (this.mapVisible) this._drawMinimap();
+  }
+
+  /* ---------- 미니맵 ---------- */
+  attach(world, player, monster) {
+    this._w = world; this._p = player; this._m = monster;
+  }
+
+  toggleMinimap(show) {
+    this.mapVisible = show;
+    if (this.minimap) this.minimap.classList.toggle("hidden", !show);
+  }
+
+  _drawMinimap() {
+    const w = this._w, p = this._p, m = this._m, c = this.minimapCtx;
+    if (!c || !this.minimap || !w || !p) return;
+    const W = this.minimap.width, H = this.minimap.height, PAD = 14;
+    const X0 = -50, X1 = 53, Z0 = -56, Z1 = 50;
+    const sx = (W - PAD * 2) / (X1 - X0);
+    const sy = (H - PAD * 2) / (Z1 - Z0);
+    const mx = (x) => PAD + (x - X0) * sx;
+    const mz = (z) => PAD + (z - Z0) * sy;
+
+    // 배경
+    c.fillStyle = "rgba(5,10,16,0.86)";
+    c.fillRect(0, 0, W, H);
+    c.strokeStyle = "#2a3f55"; c.lineWidth = 1;
+    c.strokeRect(0.5, 0.5, W - 1, H - 1);
+
+    // 동서 복도 밴드 (개방 구역)
+    c.fillStyle = "rgba(84,116,150,0.10)";
+    c.fillRect(mx(-46), mz(-30), mx(46) - mx(-46), mz(-26) - mz(-30));
+    c.fillRect(mx(-46), mz(-4), mx(46) - mx(-46), mz(0) - mz(-4));
+
+    // 방
+    if (w.rooms) for (const r of w.rooms) {
+      const x0 = mx(r.x - r.w / 2), y0 = mz(r.z - r.d / 2);
+      const x1 = mx(r.x + r.w / 2), y1 = mz(r.z + r.d / 2);
+      c.fillStyle = "rgba(18,30,44,0.92)";
+      c.fillRect(x0, y0, x1 - x0, y1 - y0);
+      c.strokeStyle = "#2b4258"; c.lineWidth = 1;
+      c.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0 - 1, y1 - y0 - 1);
+    }
+
+    // 벽
+    c.strokeStyle = "#55758f"; c.lineWidth = 2; c.beginPath();
+    if (w.walls) for (const wall of w.walls) {
+      c.moveTo(mx(wall.x0), mz(wall.z0));
+      c.lineTo(mx(wall.x1), mz(wall.z1));
+    }
+    c.stroke();
+
+    // 안전지대(대피소) 영역
+    c.fillStyle = "#41ff9e"; c.globalAlpha = 0.25;
+    c.fillRect(mx(-4.5), mz(40.5), mx(4.5) - mx(-4.5), mz(47.5) - mz(40.5));
+    c.globalAlpha = 1;
+    // 충전소
+    const chg = w.chargeStation;
+    if (chg) {
+      c.fillStyle = "#ffd23c";
+      c.beginPath(); c.arc(mx(chg.x), mz(chg.z), 3.5, 0, Math.PI * 2); c.fill();
+    }
+    // 출구
+    if (w.exit) {
+      c.strokeStyle = "#41ff9e"; c.lineWidth = 2.5;
+      c.strokeRect(mx(w.exit.x) - 5, mz(w.exit.z) - 5, 10, 10);
+    }
+
+    // 잠긴 문
+    if (w.lockedDoors) for (const d of w.lockedDoors) {
+      const x0 = d.axis === "x" ? d.x - d.width / 2 : d.x, x1 = d.axis === "x" ? d.x + d.width / 2 : d.x;
+      const z0 = d.axis === "z" ? d.z - d.width / 2 : d.z, z1 = d.axis === "z" ? d.z + d.width / 2 : d.z;
+      c.strokeStyle = "#ff5740"; c.lineWidth = 2.5;
+      c.beginPath(); c.moveTo(mx(x0), mz(z0)); c.lineTo(mx(x1), mz(z1)); c.stroke();
+      c.fillStyle = "#ff5740";
+      c.beginPath(); c.arc(mx(d.x), mz(d.z), 2.4, 0, Math.PI * 2); c.fill();
+    }
+
+    // 차단기
+    if (w.fuses) for (const f of w.fuses) {
+      c.shadowBlur = 0;
+      c.fillStyle = f.collected ? "rgba(56,255,208,0.22)" : "#38ffd0";
+      if (!f.collected) c.shadowColor = "#38ffd0", c.shadowBlur = 5;
+      c.beginPath(); c.arc(mx(f.x), mz(f.z), f.collected ? 2 : 2.8, 0, Math.PI * 2); c.fill();
+      c.shadowBlur = 0;
+    }
+
+    // 서랍
+    if (w.drawers) for (const d of w.drawers) {
+      c.fillStyle = d.searched ? "rgba(120,140,160,0.30)" : (d.lootId ? "#ffb347" : "#8b97a5");
+      c.fillRect(mx(d.x) - 2, mz(d.z) - 2, 4, 4);
+    }
+
+    // 괴물
+    if (m) {
+      c.fillStyle = "#ff3b3b"; c.shadowColor = "#ff3b3b"; c.shadowBlur = 6;
+      c.beginPath(); c.arc(mx(m.x), mz(m.z), 3.6, 0, Math.PI * 2); c.fill();
+      c.shadowBlur = 0;
+    }
+
+    // 플레이어 (전방 화살표)
+    if (p) {
+      const cxp = mx(p.x), czp = mz(p.z);
+      const ax = cxp + Math.sin(p.yaw) * sx * 2.0;
+      const az = czp - Math.cos(p.yaw) * sy * 2.0;
+      c.strokeStyle = "#8fd8ff"; c.lineWidth = 2;
+      c.beginPath(); c.moveTo(cxp, czp); c.lineTo(ax, az); c.stroke();
+      c.fillStyle = "#8fd8ff";
+      c.beginPath(); c.arc(cxp, czp, 3, 0, Math.PI * 2); c.fill();
+    }
+
+    // 북쪽 + 범례
+    c.fillStyle = "#6b8ba6"; c.font = "9px sans-serif";
+    c.fillText("N", mx(0) - 3, mz(-50) - 5);
+    c.fillText("출구", mx(0) - 13, mz(-50) + 21);
+    c.fillStyle = "#4a6b86";
+    c.fillText("M - 닫기", W - 58, H - 8);
   }
 
   /* ---------- 점프스케어 ---------- */
