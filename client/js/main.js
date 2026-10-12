@@ -238,6 +238,7 @@ startBtn.addEventListener("click", () => {
 
 function startGame() {
   applyDifficulty(settings.difficulty);
+  world.setMood(settings.difficulty === "nightmare");
   game.phase = "playing";
   game.elapsed = 0;
   game.encounters = 0;

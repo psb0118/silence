@@ -110,12 +110,37 @@ export class World {
       new THREE.PointsMaterial({ color: 0xaebfda, size: 1.6, sizeAttenuation: false, fog: false, transparent: true, opacity: 0.8 })
     );
     this.scene.add(stars);
+    this.stars = stars;
 
     const tex = makeGlowTexture("#dfe8ff", "#7f93c8");
     const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, fog: false, transparent: true, depthWrite: false }));
     moon.scale.set(46, 46, 1);
     moon.position.set(-120, 120, -220);
     this.scene.add(moon);
+    this.moonSprite = moon;
+  }
+
+  /* ---------- 난이도별 무드 (조명/안개) ---------- */
+  // 악몽: 손전등이 없으면 거의 완전한 암흑 — 달·별도 숨긴다
+  setMood(nightmare) {
+    if (!this.hemi) return;
+    if (nightmare) {
+      this.hemi.intensity = 0.010;
+      this.ambient.intensity = 0.003;
+      if (this.moonLight) this.moonLight.intensity = 0.015;
+      if (this.scene.fog) { this.scene.fog.color.setHex(0x02040a); this.scene.fog.density = 0.05; }
+      this.scene.background = new THREE.Color(0x010204);
+      if (this.stars) this.stars.visible = false;
+      if (this.moonSprite) this.moonSprite.visible = false;
+    } else {
+      this.hemi.intensity = 0.22;
+      this.ambient.intensity = 0.06;
+      if (this.moonLight) this.moonLight.intensity = 0.32;
+      if (this.scene.fog) { this.scene.fog.color.setHex(0x0a111e); this.scene.fog.density = 0.024; }
+      this.scene.background = new THREE.Color(0x070b12);
+      if (this.stars) this.stars.visible = true;
+      if (this.moonSprite) this.moonSprite.visible = true;
+    }
   }
 
   /* ---------- 조명 ---------- */
