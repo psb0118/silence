@@ -243,17 +243,24 @@ html, body {
 }
 
 /* ================= 오버레이 ================= */
+/* overflow 안전 중앙정렬: 내용이 화면보다 크면 위아래 모두 스크롤로 접근 가능 */
 .overlay {
   position: fixed; inset: 0; z-index: 50;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: flex-start; justify-content: flex-start;
   background: radial-gradient(ellipse at center, rgba(10,14,20,0.86), rgba(3,4,7,0.97));
   backdrop-filter: blur(2px);
-  padding: 20px;
+  padding: 24px 20px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 .overlay.dark { background: radial-gradient(ellipse at center, rgba(20,0,0,0.9), rgba(0,0,0,0.99)); }
 
 .box {
   width: min(680px, 94vw);
+  margin: auto;              /* flex auto margin = 공간 있으면 중앙, 부족하면 양끝 스크롤 */
+  flex: 0 0 auto;
   background: rgba(14,18,25,0.72);
   border: 1px solid rgba(150,170,190,0.14);
   border-radius: 16px;
@@ -295,6 +302,17 @@ html, body {
 .diff-row select {
   background: #141a22; color: #cfd6df; border: 1px solid rgba(255,255,255,0.14);
   border-radius: 8px; padding: 7px 10px; font-size: 12px; min-width: 200px;
+}
+
+/* 시작 화면 하단 고정 영역: 스크롤해도 시작 버튼이 항상 보이도록 */
+.start-cta {
+  position: sticky;
+  bottom: -24px;                 /* .box padding(28px) 보정 — 화면 하단에 붙는다 */
+  z-index: 3;
+  margin: 10px -14px -16px;
+  padding: 16px 14px 14px;
+  background: linear-gradient(180deg, rgba(14,18,25,0) 0%, rgba(14,18,25,0.94) 30%, rgba(14,18,25,0.97) 100%);
+  border-radius: 0 0 14px 14px;
 }
 
 .big-btn {

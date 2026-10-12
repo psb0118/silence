@@ -245,8 +245,28 @@ function startGame() {
   ui.setHp(player.hp, player.maxHp);
   ui.setObjective(`차단기 ${FUSE_TOTAL}개를 찾아 전원을 복구하세요`, 0, FUSE_TOTAL, null);
   ui.toast(`[${DIFFICULTY[settings.difficulty]?.label || "보통"}] 괴물가 너의 숨을 느꼈다. 조용히 움직여라.`, 3400);
-  if (noise.micEnabled) noise.attachMic();
+  if (noise.micEnabled) {
+    ui.setMic("pending");
+    noise.attachMic().then(() => micFeedback(true));
+  }
   lockPointer();
+}
+
+// 마이크 연결 결과를 화면 안내로 표시
+function micFeedback(onTurnOn) {
+  ui.setMic(noise.micState);
+  const s = noise.micState;
+  if (s === "active") {
+    if (onTurnOn) ui.toast("마이크 ON — 네 목소리도 괴물을 부른다 (V로 끄기)", 3000);
+  } else if (s === "denied") {
+    ui.toast("마이크 권한 거부됨 — 주소창 자물쇠 → 마이크 허용 후 V키로 다시 켜세요", 5600);
+  } else if (s === "unsupported") {
+    ui.toast("이 주소에서는 마이크를 쓸 수 없다. http://localhost 로 접속해라", 5600);
+  } else if (s === "error") {
+    ui.toast("마이크 오류 — 다른 앱이 점유 중일 수 있다. V키로 다시 시도", 4600);
+  } else if (s === "off" && !onTurnOn) {
+    ui.toast("마이크 꺼짐", 1600);
+  }
 }
 
 function resetFuses() {
@@ -350,7 +370,13 @@ function winGame() {
 function toggleMic() {
   const on = noise.toggleMic();
   ui.setMic(noise.micState);
-  ui.toast(on ? "마이크 켜짐 — 목소리가 괴물을 유인합니다" : "마이크 꺼짐", 2200);
+  if (!on) {
+    ui.toast("마이크 꺼짐", 1600);
+    return;
+  }
+  ui.setMic("pending");
+  // attachMic는 async — 결과가 나오면 안내 표시
+  Promise.resolve(noise.attachMic()).then(() => micFeedback(false));
 }
 
 let mapOn = false;
