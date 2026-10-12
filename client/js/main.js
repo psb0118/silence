@@ -97,6 +97,9 @@ const game = {
   alertTimer: 0,
   alertText: null,
   lastSeenHide: null,
+  eConsumed: false,  // 한 번의 E 누름 = 한 동작만 (재누를 때까지 대기)
+  noteEscapedAt: -1e9, // 메모 닫기 Esc 시각 (포인터 잠금 해제 재잠금용)
+  relockT: null,
   notesRead: {}   // 읽은 메모 id → true
 };
 const FUSE_TOTAL = world.fuses.length;
@@ -156,7 +159,11 @@ function onKey(e, down) {
       if (down && !e.repeat && game.phase === "playing") useSlot(parseInt(c.slice(5), 10) - 1);
       break;
     case "Escape":
-      if (game.phase === "playing") pause();
+      // 메모(단서)가 떠 있으면 닫기만 하고 게임은 멈추지 않는다
+      if (ui.isNoteOpen()) {
+        ui.hideNote();
+        game.noteEscapedAt = performance.now();
+      } else if (game.phase === "playing") pause();
       break;
   }
 }
@@ -193,7 +200,22 @@ function unlockPointer() {
 }
 document.addEventListener("pointerlockchange", () => {
   pointerLocked = document.pointerLockElement === renderer.domElement;
-  if (!pointerLocked && game.phase === "playing") pause();
+  if (!pointerLocked && game.phase === "playing") {
+    // 메모 닫기 Esc는 브라우저가 포인터 잠금을 해제한다 → 일시정지 대신 재잠금
+    const since = performance.now() - game.noteEscapedAt;
+    if (since < 1600) {
+      clearTimeout(game.relockT);
+      game.relockT = setTimeout(() => {
+        if (game.phase === "playing" && !pointerLocked) lockPointer();
+      }, Math.max(0, 1700 - since));
+      return;
+    }
+    pause();
+  }
+});
+// 잠금이 풀린 상태에서 캔버스를 클릭하면 다시 잠금
+renderer.domElement.addEventListener("click", () => {
+  if (game.phase === "playing" && !pointerLocked) lockPointer();
 });
 
 /* ================= 시작 / 일시정지 / 사망 ================= */
@@ -217,6 +239,7 @@ function startGame() {
   game.collected = 0;
   game.batteryWarned = false;
   game.lastMonsterState = STATE.ROAM;
+  game.eConsumed = false;
   showAlert(null);
   game.notesRead = {};
   ui.hideNote();
@@ -282,6 +305,7 @@ function pause() {
   if (game.phase !== "playing") return;
   game.phase = "paused";
   unlockPointer();
+  ui.hideNote();
   ui.show(ui.pause);
   ui.setMic(noise.micState);
 }
@@ -496,7 +520,7 @@ function updateObjectives(dt) {
     label = "철문 열고 탈출";
   }
 
-  const holdingE = !!eKeyDown;
+  const holdingE = !!eKeyDown && !game.eConsumed;
   if (target && holdingE) {
     const same = game.interactTarget &&
       game.interactTarget.type === target.type &&
@@ -522,9 +546,10 @@ function updateObjectives(dt) {
       else winGame();
       game.interactHold = 0;
       game.interactTarget = null;
+      game.eConsumed = true;   // 한 번의 E = 한 동작 (연쇄 방지)
     }
   } else {
-    game.interactHold = 0;
+    if (!eKeyDown) game.interactHold = 0;
     game.interactTarget = null;
   }
 
@@ -559,7 +584,9 @@ function collectFuse(f) {
 
 let eKeyDown = false;
 document.addEventListener("keydown", (e) => { if (e.code === "KeyE") eKeyDown = true; });
-document.addEventListener("keyup", (e) => { if (e.code === "KeyE") eKeyDown = false; });
+document.addEventListener("keyup", (e) => {
+  if (e.code === "KeyE") { eKeyDown = false; game.eConsumed = false; } // 재누르면 다음 동작 허용
+});
 
 /* ================= 서랍 처리 ================= */
 // phase: "open" | "take" | "close"

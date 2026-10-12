@@ -54,9 +54,6 @@ export class UI {
     this._noteT = null;
     if (this.noteModal) {
       this.noteModal.addEventListener("click", () => this.hideNote());
-      document.addEventListener("keydown", (e) => {
-        if (e.code === "Escape") this.hideNote();
-      });
     }
     this._drawScareFace();
   }
@@ -478,6 +475,9 @@ export class UI {
   }
   hideNote() {
     if (this.noteModal) this.noteModal.classList.add('hidden');
+  }
+  isNoteOpen() {
+    return !!this.noteModal && !this.noteModal.classList.contains('hidden');
   }
 
   showInvEmpty(ms = 1200) {
