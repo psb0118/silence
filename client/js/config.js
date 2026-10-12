@@ -95,6 +95,8 @@ export const CONFIG = {
 
     stuckTime: 1.1,
     repathInterval: 0.30,
+    roamMin: 6,           // 배회 목표 최소 거리 (활동 반경 하단)
+    roamMax: 54,          // 배회 목표 최대 거리 (활동 반경 상단)
 
     // "들킨 상태" 판정 — 직전 목격/소음 인지가 이 시간 이내이고(가장 최근 인지 지점이
     // 은신처와 가까우면) 은신해도 포기하지 않고 은신처를 뒤져 끝내 찾아낸다.
@@ -209,5 +211,39 @@ export const DIFFICULTY = {
     stamina: { drain: 1.2, regen: 0.65 },
     battery: { drain: 1.9 },
     assist: { ambientScareMin: 18, ambientScareMax: 40 }
+  },
+  nightmare: {
+    label: "악몽",
+    hpMax: 1,
+    monster: {
+      // 활동 반경 대폭 확대 — 시설 전역을 멀리서부터 배회
+      roamMin: 20,
+      roamMax: 58,
+      chaseSpeed: 7.0,
+      investigateSpeed: 5.6,
+      stalkSpeed: 4.0,
+      searchSpeed: 3.6,
+      sightBase: 22,
+      sightChase: 27,
+      hearBase: 46,        // 걸음(0.42)도 약 19m까지 들림
+      senseRadius: 5.0,
+      loseTime: 6.0,
+      suspicionTime: 20,
+      searchTime: 20,
+      searchRadius: 26,
+      attackWindup: 0.32,
+      loudIntensity: 0.4,
+      loudScore: 0.24,
+      loudDist: 11,
+      // 숨는 순간을 절대 놓치지 않는다 — 은신은 거의 의미 없음
+      hideKnowledgeTime: 9999,
+      hideKnowledgeDist: 9999,
+      inspectFindChance: 1.0,
+      hideInspectChance: 1.0
+    },
+    noise: { moveEventThreshold: 0.14, moveEventInterval: 0.22 }, // 앉아서 걸어도 감지
+    stamina: { drain: 1.3, regen: 0.6 },
+    battery: { drain: 2.2 },
+    assist: { ambientScareMin: 14, ambientScareMax: 30 }
   }
 };

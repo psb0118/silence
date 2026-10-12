@@ -110,7 +110,8 @@ const _CFG_BASE = {
   monster: { ...CONFIG.monster },
   stamina: { ...CONFIG.stamina },
   battery: { ...CONFIG.battery },
-  assist: { ...CONFIG.assist }
+  assist: { ...CONFIG.assist },
+  noise: { ...CONFIG.noise }
 };
 
 function applyDifficulty(key) {
@@ -119,6 +120,7 @@ function applyDifficulty(key) {
   Object.assign(CONFIG.stamina, _CFG_BASE.stamina, d.stamina || {});
   Object.assign(CONFIG.battery, _CFG_BASE.battery, d.battery || {});
   Object.assign(CONFIG.assist, _CFG_BASE.assist, d.assist || {});
+  Object.assign(CONFIG.noise, _CFG_BASE.noise, d.noise || {});
   player.setMaxHp(d.hpMax || 2);
   return d;
 }
