@@ -1084,9 +1084,25 @@ export class World {
     return true;
   }
 
-  // 새 게임을 시작할 때 퍼즐/전리품 상태를 초기화
-  resetInteractive() {
+  // 악몽: 예비 배터리 서랍을 야전 손전등(100% 충전)으로 교체 — 충전소가 없으므로
+  setNightmareLoot(on) {
     for (const d of this.drawers) {
+      if (d.lootBaseId === undefined) {
+        d.lootBaseId = d.lootId;
+        d.lootBaseName = d.lootName;
+      }
+      if (on && d.lootBaseId === "battery") {
+        d.lootId = "flashlight";
+        d.lootName = "야전 손전등";
+      } else {
+        d.lootId = d.lootBaseId;
+        d.lootName = d.lootBaseName;
+      }
+    }
+  }
+
+  // 새 게임을 시작할 때 퍼즐/전리품 상태를 초기화
+  resetInteractive() {    for (const d of this.drawers) {
       d.opened = false;
       d.anim = 0;
       d.looted = false;

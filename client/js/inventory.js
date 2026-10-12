@@ -11,6 +11,10 @@ export const ITEM = {
     id: "battery", name: "예비 배터리", kind: "use", color: "#f5d76e",
     desc: "손전등 배터리를 40 채운다. 숫자키로 꺼냈다가 다시 누르면 사용한다."
   },
+  FLASHLIGHT: {
+    id: "flashlight", name: "야전 손전등", kind: "use", color: "#ffd97a",
+    desc: "새 손전등으로 교체한다 — 배터리를 100%로 채운다. 숫자키로 꺼냈다가 다시 누르면 사용한다."
+  },
   MEDKIT: {
     id: "medkit", name: "구급상자", kind: "use", color: "#e06080",
     desc: "체력을 1 회복한다. 숫자키로 꺼냈다가 다시 누르면 사용한다."

@@ -194,7 +194,28 @@ export class Player {
     decoy.add(spk, led);
     decoy.rotation.x = -0.3;
 
-    this.heldModels = { battery, medkit, smoke, decoy };
+    // 야전 손전등 (교체품)
+    const flashlight = make();
+    const fBody = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.024, 0.024, 0.16, 12),
+      new THREE.MeshStandardMaterial({ color: 0x6d7a4f, roughness: 0.5, metalness: 0.4 })
+    );
+    flashlight.add(fBody);
+    const fHead = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.024, 0.05, 12),
+      new THREE.MeshStandardMaterial({ color: 0x8c8f7a, roughness: 0.4, metalness: 0.55 })
+    );
+    fHead.position.y = 0.104;
+    flashlight.add(fHead);
+    const fLens = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.032, 0.032, 0.01, 12),
+      new THREE.MeshStandardMaterial({ color: 0xfff2c4, emissive: 0xffe9a8, emissiveIntensity: 0.6 })
+    );
+    fLens.position.y = 0.13;
+    flashlight.add(fLens);
+    flashlight.rotation.x = -0.55;
+
+    this.heldModels = { battery, medkit, smoke, decoy, flashlight };
     root.position.set(0.24, -0.26, -0.44);
     root.rotation.y = -0.05;
     this.camera.add(root);

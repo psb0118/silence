@@ -259,6 +259,7 @@ function startGame() {
   resetFuses();
   player.inventory.clear();
   world.resetInteractive();
+  world.setNightmareLoot(settings.difficulty === "nightmare");
   monster.rebuildGrid();
   ui.setInventory(player.inventory, -1);
   if (world.chargeStation) world.chargeStation.setActive(false);
@@ -276,6 +277,9 @@ function startGame() {
   ui.setHp(player.hp, player.maxHp);
   ui.setObjective(`차단기 ${FUSE_TOTAL}개를 찾아 전원을 복구하세요`, 0, FUSE_TOTAL, null);
   ui.toast(`[${DIFFICULTY[settings.difficulty]?.label || "보통"}] 괴물이 너의 숨을 느꼈다. 조용히 움직여라.`, 3400);
+  if (settings.difficulty === "nightmare") {
+    ui.toast("악몽: 지도 없음 · 충전소 없음 · 괴물 2마리 — 손전등이 유일한 빛", 4200);
+  }
   if (noise.micEnabled) {
     ui.setMic("pending");
     noise.attachMic().then(() => micFeedback(true));
@@ -775,6 +779,13 @@ function useSlot(i) {
     inv.takeAt(i);
     audio.blip(1180, 0.14);
     ui.toast("배터리 보급 — 손전등 충전", 1600);
+  } else if (slot.id === "flashlight") {
+    const B = CONFIG.battery;
+    if (player.battery >= B.max - 0.5) { ui.toast("손전등이 이미 새것과 같다", 1600); return; }
+    player.battery = B.max;
+    inv.takeAt(i);
+    audio.blip(1320, 0.16);
+    ui.toast("새 손전등으로 교체 — 배터리 100%", 1800);
   } else if (slot.id && slot.id.startsWith("key_")) {
     ui.toast(`${def ? def.name : "열쇠"} — 잠긴 문 앞에서 E를 눌러 사용한다`, 2200);
   } else if (slot.id === "medkit") {
@@ -884,9 +895,10 @@ function loop() {
     monster.update(dt, player);
     updateEffects(dt);
 
-    // 충전소 배터리 (안전지대에서만)
+    // 충전소 배터리 (안전지대에서만 · 악몽에서는 충전소 자체가 없다)
     const cs = world.chargeStation;
     player.charging = player.inSafeZone && !!cs &&
+      settings.difficulty !== "nightmare" &&
       Math.hypot(cs.x - player.x, cs.z - player.z) < CONFIG.interaction.chargeRange &&
       player.battery < CONFIG.battery.max;
     if (cs) cs.setActive(player.charging);
