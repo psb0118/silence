@@ -168,9 +168,22 @@ html, body {
 }
 #hp-text { color: #c9a0a8; margin-left: 4px; font-variant-numeric: tabular-nums; }
 
+/* 스피드런 타이머 (좌상단 작게) */
+#run-timer {
+  position: absolute; left: 20px; top: 12px;
+  font: 700 13px/1 "Consolas", "Malgun Gothic", monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .08em;
+  color: #9fe8c0; text-shadow: 0 0 8px rgba(65,255,158,0.35), 0 1px 2px #000;
+  background: rgba(8,11,17,0.55);
+  border: 1px solid rgba(65,255,158,0.25);
+  border-radius: 6px; padding: 5px 9px;
+  pointer-events: none;
+}
+
 /* 목표 */
 #objective {
-  position: absolute; left: 20px; top: 18px;
+  position: absolute; left: 20px; top: 52px;
   padding: 10px 14px; max-width: 340px;
   background: rgba(8,11,17,0.5);
   border-left: 3px solid rgba(239,68,68,0.7);

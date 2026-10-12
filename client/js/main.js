@@ -226,6 +226,7 @@ renderer.domElement.addEventListener("click", () => {
 /* ================= 시작 / 일시정지 / 사망 ================= */
 const startBtn = document.getElementById("btn-start");
 const useMicCheckbox = document.getElementById("use-mic");
+const runTimerEl = document.getElementById("run-timer");
 
 startBtn.addEventListener("click", () => {
   audio.init();
@@ -959,6 +960,8 @@ function loop() {
     ui.setHp(player.hp, player.maxHp);
     ui.setSafeZone(player.inSafeZone, player.charging);
     ui.setMic(noise.micState);
+    // 스피드런 타이머 — game.elapsed은 playing일 때만 흐른다(ESC 일시정지 = 타이머 정지)
+    if (runTimerEl) runTimerEl.textContent = formatTime(game.elapsed);
   }
 
   renderer.render(scene, camera);
