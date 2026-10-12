@@ -1102,6 +1102,6 @@ ui.setFlashlight(true);
 ui.setHudVisible(false);
 
 // 디버그/테스트용 훅
-window.__silence = { game, player, monster, get monster2() { return monster2; }, get monster2Active() { return monster2Active; }, startGame, noise, world, ui, settings, STATE, input, audio, renderer, camera, scene, THREE, DIFFICULTY, applyDifficulty, smokes, decoys };
+window.__silence = { game, player, monster, get monster2() { return monster2; }, get monster2Active() { return monster2Active; }, startGame, noise, world, ui, settings, STATE, input, audio, renderer, camera, scene, THREE, DIFFICULTY, CONFIG, applyDifficulty, smokes, decoys };
 
 loop();

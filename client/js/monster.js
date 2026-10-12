@@ -693,17 +693,26 @@ export class Monster {
   }
 
   _pickRoamTarget() {
+    const cfg = CONFIG.monster;
     const K = this.world.compound;
-    for (let tries = 0; tries < 20; tries++) {
+    const rMin = cfg.roamMin !== undefined ? cfg.roamMin : 6;
+    const rMax = cfg.roamMax !== undefined ? cfg.roamMax : CONFIG.worldRadius - 10;
+    const rEdge = CONFIG.worldRadius - 4;
+    for (let tries = 0; tries < 24; tries++) {
       const a = rand(0, Math.PI * 2);
-      const r = rand(6, CONFIG.worldRadius - 10);
+      const r = rand(rMin, rMax);
       let x, z;
-      // 절반은 시설 안쪽으로
+      // 절반은 시설 안쪽으로 (자기 위치 기준 최소 활동 반경 밖만)
       if (Math.random() < 0.55) {
         x = rand(K.OX0 + 4, K.OX1 - 4);
         z = rand(K.OZ0 + 4, K.OZ1 - 4);
+        const dSelf = Math.hypot(x - this.x, z - this.z);
+        if (dSelf < rMin || dSelf > rMax) continue;
       } else {
-        x = Math.cos(a) * r; z = Math.sin(a) * r;
+        // 나머지는 자기 위치에서 roamMin~roamMax 사이 원환 (지도 경계 준수)
+        x = this.x + Math.cos(a) * r;
+        z = this.z + Math.sin(a) * r;
+        if (Math.hypot(x, z) > rEdge) continue;
       }
       if (this.world.inSafeZone(x, z)) continue;
       if (!this.world.isBlockedPoint(x, z, this.radius)) {
@@ -712,7 +721,16 @@ export class Monster {
         return;
       }
     }
-    this.target = { x: 0, z: -2 };
+    // 폴백: 자기 위치 기준 활동 반경 원환 (지도 안쪽으로 축소하며 재시도)
+    const a = rand(0, Math.PI * 2);
+    let r = rand(rMin, rMax);
+    let x = this.x + Math.cos(a) * r, z = this.z + Math.sin(a) * r;
+    while (Math.hypot(x, z) > rEdge && r > 4) {
+      r *= 0.7;
+      x = this.x + Math.cos(a) * r; z = this.z + Math.sin(a) * r;
+    }
+    this.target = { x, z };
+    this._path = []; this._repathTimer = 0;
   }
 
   _pickSearchTarget() {
