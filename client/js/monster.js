@@ -88,7 +88,8 @@ export class Monster {
     const bone = (len, r1, r2, mat) => {
       const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, 6), mat);
       m.position.y = -len / 2;
-      m.castShadow = true; m.userData.castShadow = true;
+      // 사지 뼈대는 그림자 생략 (캐스터 축소: chest/belly/skull만)
+      m.castShadow = false; m.userData.castShadow = false;
       return m;
     };
     const joint = (parent, x, y, z) => { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g; };
@@ -204,7 +205,7 @@ export class Monster {
       elbow.add(bone(0.66, 0.045, 0.035, skinMat));
       const wrist = joint(elbow, 0, -0.66, 0);
       const palm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 0.06), skinMat);
-      palm.position.y = -0.07; palm.castShadow = true; palm.userData.castShadow = true;
+      palm.position.y = -0.07; palm.castShadow = false; palm.userData.castShadow = false;
       wrist.add(palm);
       for (let i = 0; i < 4; i++) {
         const cl = new THREE.Mesh(new THREE.ConeGeometry(0.016, 0.2, 4), clawMat);
@@ -229,7 +230,7 @@ export class Monster {
       knee.add(bone(0.7, 0.055, 0.045, skinMat));
       const ankle = joint(knee, 0, -0.7, 0);
       const foot = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.07, 0.3), darkMat);
-      foot.position.set(0, -0.02, 0.08); foot.castShadow = true; foot.userData.castShadow = true;
+      foot.position.set(0, -0.02, 0.08); foot.castShadow = false; foot.userData.castShadow = false;
       ankle.add(foot);
       for (let i = 0; i < 3; i++) {
         const cl = new THREE.Mesh(new THREE.ConeGeometry(0.015, 0.12, 4), clawMat);
@@ -281,13 +282,15 @@ export class Monster {
     if (player.inSafeZone) return false;
     if (player.hidden) return false;
     const d = Math.hypot(player.x - this.x, player.z - this.z);
-    const sight = (this.state === STATE.CHASE || this.state === STATE.ATTACK) ? CONFIG.monster.sightChase : CONFIG.monster.sightBase;
+    const chasing = this.state === STATE.CHASE || this.state === STATE.ATTACK;
+    const sight = chasing ? CONFIG.monster.sightChase : CONFIG.monster.sightBase;
     if (d > sight) return false;
-    // 시야각
+    // 시야각 (추격/공격 중에는 생략 — 고개를 돌렸다고 목표를 잃지 않는다.
+    //  벽·연막 차단은 아래에서 계속 적용 → 커버로만 끊길 수 있다)
     const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
     const nx = (player.x - this.x) / (d || 1), nz = (player.z - this.z) / (d || 1);
     const facing = fx * nx + fz * nz;
-    if (d > 3 && facing < CONFIG.monster.sightFov) return false;
+    if (d > 3 && !chasing && facing < CONFIG.monster.sightFov) return false;
     if (this._smokeBlocks(this.x, this.z, player.x, player.z)) return false;
     return !this.world.lineBlocked(this.x, this.z, player.x, player.z);
   }
@@ -767,7 +770,8 @@ export class Monster {
     if (this._repathTimer <= 0 || this._path.length === 0 || targetFar) {
       this._path = this._findPath(this.x, this.z, this.target.x, this.target.z);
       this._pathTargetX = this.target.x; this._pathTargetZ = this.target.z;
-      this._repathTimer = cfg.repathInterval;
+      const chasing = this.state === STATE.CHASE || this.state === STATE.ATTACK;
+      this._repathTimer = chasing ? cfg.repathIntervalChase : cfg.repathInterval;
     }
 
     while (this._path.length && Math.hypot(this._path[0].x - this.x, this._path[0].z - this.z) < 0.7) {
@@ -802,10 +806,14 @@ export class Monster {
       this._stuckTimer += dt;
       if (this._stuckTimer > cfg.stuckTime) {
         this._stuckTimer = 0;
-        this._wanderBias = (Math.random() < 0.5 ? 1 : -1) * (Math.PI / 3);
+        // 같은 방향으로 또 붙지 않도록 매번 좌우 교대
+        this._wanderBias = (this._wanderBias >= 0 ? -1 : 1) * (Math.PI / 3);
         this._path = [];
         this._repathTimer = 0;
-        this.target = { x: this.target.x + rand(-4, 4), z: this.target.z + rand(-4, 4) };
+        // 추격 중에는 lastKnown를 벗어난 목표로 흔들지 않는다 (매 프레임 lastKnown에서 다시 세팅됨)
+        if (this.state !== STATE.CHASE && this.state !== STATE.ATTACK) {
+          this.target = { x: this.target.x + rand(-4, 4), z: this.target.z + rand(-4, 4) };
+        }
       }
     } else {
       this._stuckTimer = 0;

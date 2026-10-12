@@ -83,7 +83,7 @@ export const CONFIG = {
     stalkTime: 9,
     searchTime: 13,
     searchRadius: 18,
-    loseTime: 3.6,
+    loseTime: 6.5,        // 목격/소음 후 추격 유지 시간 (3.6은 눈길만 돌려도 추격이 즉시 끊겼음)
     suspicionTime: 12,     // 마지막 소음 기억 유지
 
     attackRange: 2.5,
@@ -95,6 +95,7 @@ export const CONFIG = {
 
     stuckTime: 1.1,
     repathInterval: 0.30,
+    repathIntervalChase: 0.15,   // 추격 중에는 더 자주 재경로 (walls·모서리에서 끊김 방지)
     roamMin: 6,           // 배회 목표 최소 거리 (활동 반경 하단)
     roamMax: 54,          // 배회 목표 최대 거리 (활동 반경 상단)
 
@@ -162,7 +163,7 @@ export const DIFFICULTY = {
       sightChase: 14,
       hearBase: 16,
       senseRadius: 2.6,
-      loseTime: 2.6,
+      loseTime: 4.0,
       suspicionTime: 8,
       searchTime: 9,
       searchRadius: 14,
@@ -197,7 +198,7 @@ export const DIFFICULTY = {
       sightChase: 23,
       hearBase: 28,
       senseRadius: 4.2,
-      loseTime: 5.0,
+      loseTime: 6.5,
       suspicionTime: 16,
       searchTime: 16,
       searchRadius: 22,
@@ -227,7 +228,7 @@ export const DIFFICULTY = {
       sightChase: 27,
       hearBase: 46,        // 걸음(0.42)도 약 19m까지 들림
       senseRadius: 5.0,
-      loseTime: 6.0,
+      loseTime: 7.0,
       suspicionTime: 20,
       searchTime: 20,
       searchRadius: 26,

@@ -33,6 +33,7 @@ export class Player {
 
     this.battery = CONFIG.battery.max;
     this.charging = false;
+    this.flashDead = false;   // 악몽: 배터리 완전 소진 → 손전등 영구 고장
 
     this.maxHp = 2;
     this.hp = 2;
@@ -234,7 +235,7 @@ export class Player {
   }
 
   setFlashlight(on) {
-    if (on && this.battery < CONFIG.battery.minOn) {
+    if (on && (this.flashDead || this.battery < CONFIG.battery.minOn)) {
       this.flashOn = false;
       this._flashTarget = 0.0;
       this.lens.material.color.setHex(0x2a2a24);
@@ -248,6 +249,10 @@ export class Player {
 
   toggleFlashlight() {
     const turningOn = !this.flashOn;
+    if (turningOn && this.flashDead) {
+      this.audio.blip(140, 0.14);
+      return { ok: false, reason: "dead" };
+    }
     if (turningOn && this.battery < CONFIG.battery.minOn) {
       this.audio.blip(220, 0.12);
       return { ok: false, reason: "battery" };
@@ -267,6 +272,8 @@ export class Player {
       if (this.battery <= 0) {
         this.setFlashlight(false);
         this.audio.blip(200, 0.14);
+        // 악몽: 충전 불가 + 소진 = 영구 고장 (서랍의 야전 손전등 교체품으로만 회복)
+        if (this.settings && this.settings.difficulty === "nightmare") this.flashDead = true;
       }
     }
   }
@@ -551,6 +558,7 @@ export class Player {
     this.stamina = CONFIG.stamina.max;
     this.battery = CONFIG.battery.max;
     this.charging = false;
+    this.flashDead = false;
     this.hp = this.maxHp;
     this.invuln = 0;
     this.flashOn = true;

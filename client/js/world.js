@@ -13,7 +13,8 @@ import { rand, makeRng, clamp, dist2 } from "./util.js";
 const C = {
   OX0: -46, OX1: 46, OZ0: -50, OZ1: 18,   // 외곽
   spineN: -4, spineS: 2,                    // 복도 벽 (z)
-  wallH: 3.0, wallT: 0.45,
+  wallH: 4.4, wallT: 0.45,                  // 점프 눈 apex 2.672·머리 높이 위로 확실히 (눈 위 엿보기 차단)
+  headBottom: 3.2,                          // 문 상단 린텔 하단 (머리 높이보다 높게)
   divW: -20, divE: 20                       // 방 분할 (x)
 };
 
@@ -396,13 +397,13 @@ export class World {
     const woodMat = new THREE.MeshStandardMaterial({ color: 0x6a5334, roughness: 0.9 });
     const metalMat = new THREE.MeshStandardMaterial({ color: 0x59616c, roughness: 0.5, metalness: 0.7 });
 
-    const cx = 0, cz = 44, w = 13, d = 11, h = 3.1;
+    const cx = 0, cz = 44, w = 13, d = 11, h = 4.4;
     // 벽 (북쪽 z- 에 출입구)
     this._roomWalls(cx, cz, w, d, h, C.wallT, wallMat, { N: { center: 0, width: 3.2 } });
 
-    // 지붕
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.5, 0.3, d + 0.5), roofMat);
-    roof.position.set(cx, this.heightAt(cx, cz) + h - 0.3, cz);
+    // 지붕 (벽 상단과 겹치게 → 머리 관통·이음새 틈 차단)
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.6, 0.6, d + 0.6), roofMat);
+    roof.position.set(cx, this.heightAt(cx, cz) + h - 0.7, cz);
     roof.castShadow = true; roof.userData.castShadow = true;
     this.scene.add(roof);
 
@@ -519,7 +520,14 @@ export class World {
     this._lamp(-40, -40, 0xd7263d, 10, 16);   // R1 붉은 비상등
     this._lamp(-40, -14, 0xd7263d, 10, 16);   // R4 붉은 비상등
     this._lamp(0, -10, 0xffd9a0, 13, 18);     // R5 로비(따뜻한)
-    this._lamp(30, 8, 0xd7263d, 10, 16);      // R9 붉은 비상등
+    this._lamp(30, 8, 0xd7263d, 10, 16);    // R9 붉은 비상등
+
+    // ---- 방 천장 실내등 (中心) — 어두운 방 내부를 비춤 ----
+    this._lamp(0, -40, 0x9fd0ff, 13, 18);   // R2 기계실 (차가운 색)
+    this._lamp(30, -40, 0xffb060, 12, 18);  // R3 사무실
+    this._lamp(30, -14, 0xd7263d, 11, 17);  // R6 저장고 (꺼진 구석)
+    this._lamp(-30, 10, 0xffd9a0, 13, 18);  // R7 기숙사
+    this._lamp(0, 10, 0xffd0a0, 13, 18);    // R8 주방
 
     // ---- 방별 가구/프롭/은신처 ----
     this._furnishStorage(-30, -40);   // R1 창고
@@ -572,6 +580,24 @@ export class World {
       cur = Math.max(cur, b);
     }
     if (cur < to) segs.push([cur, to]);
+    // 문(갭) 위 린텔 헤더 — 머리 높이 위 문틈으로 방 안이 엿보이지 않도록 벽을 채운다.
+    // (충돌·미니맵에는 넣지 않는다: 문은 통과/개방으로 유지)
+    const lintelBottom = C.headBottom;
+    const lintelTop = h - 0.5;               // 벽 상단 (_addBox 오프셋 -0.5 기준)
+    if (lintelTop - lintelBottom > 0.1) {
+      const mh = lintelTop - lintelBottom;
+      for (const g of gs) {
+        const gx = axis === "x" ? g.center : fixed;
+        const gz = axis === "x" ? fixed : g.center;
+        const gw = axis === "x" ? g.width : t;
+        const gd = axis === "x" ? t : g.width;
+        const m = new THREE.Mesh(new THREE.BoxGeometry(gw, mh, gd), mat);
+        m.position.set(gx, this.heightAt(gx, gz) + lintelBottom + mh / 2, gz);
+        m.castShadow = true; m.receiveShadow = true;
+        m.userData.castShadow = true;
+        this.scene.add(m);
+      }
+    }
     for (const [a, b] of segs) {
       if (b - a < 0.15) continue;
       const cx = axis === "x" ? (a + b) / 2 : fixed;
@@ -597,8 +623,9 @@ export class World {
   }
 
   _roof(cx, cz, w, d, mat) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.3, d), mat);
-    m.position.set(cx, this.heightAt(cx, cz) + C.wallH - 0.25, cz);
+    // 0.6 두께·벽 상단과 겹치는 위치 → 천장 관통(머리 pokes)·이음새 틈 차단
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w + 0.6, 0.6, d + 0.6), mat);
+    m.position.set(cx, this.heightAt(cx, cz) + C.wallH - 0.7, cz);
     m.castShadow = true; m.userData.castShadow = true;
     this.scene.add(m);
   }
@@ -1049,7 +1076,7 @@ export class World {
 
   _lockedDoor(x, z, axis, width, keyId, label) {
     const y = this.heightAt(x, z);
-    const h = 2.6;
+    const h = 3.2;                           // 린텔 하단(C.headBottom)까지 — 문 위 틈으로 안이 보이지 않게
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, h, 0.22),
       new THREE.MeshStandardMaterial({ color: 0x2f363d, roughness: 0.5, metalness: 0.7 }));
     mesh.position.set(x, y + h / 2 + 0.02, z);
@@ -1058,7 +1085,8 @@ export class World {
 
     const ind = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8),
       new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0x660000, emissiveIntensity: 1.4 }));
-    ind.position.set(x, y + h + 0.18, z);
+    // 린텔에 파묻히지 않도록 문 앞면(머리 높이 위)에 표시
+    ind.position.set(axis === "x" ? x : x + 0.16, y + h - 0.3, axis === "x" ? z + 0.16 : z);
     this.scene.add(ind);
 
     const w = axis === "x" ? width : 0.24;

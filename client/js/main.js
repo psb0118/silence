@@ -11,7 +11,7 @@ import { getItemDef } from "./inventory.js";
 
 /* ================= 설정 ================= */
 const settings = Object.assign(
-  { sensitivity: 1, invertY: false, volume: 0.8, micSens: 1, quality: "low", difficulty: "normal" },
+  { sensitivity: 1, invertY: false, volume: 0.8, micSens: 1, quality: "medium", difficulty: "normal" },
   JSON.parse(localStorage.getItem("silence.settings") || "{}")
 );
 if (!DIFFICULTY[settings.difficulty]) settings.difficulty = "normal";
@@ -186,16 +186,25 @@ renderer.domElement.addEventListener("click", () => {
   if (game.phase === "playing" && !pointerLocked) lockPointer();
 });
 
-// 마우스 왼쪽 클릭으로도 손전등을 켜고 끈다
+// 마우스 왼쪽 = 기본 동작: 맨손이면 손전등 토글, 아이템을 들고 있으면 그 아이템 사용(연막투척 등)
 renderer.domElement.addEventListener("mousedown", (e) => {
-  if (e.button === 0 && pointerLocked) toggleFlashlightUI();
+  if (e.button === 0 && pointerLocked) primaryAction();
 });
+
+function primaryAction() {
+  if (game.phase !== "playing") return;
+  if (game.heldSlot < 0) { toggleFlashlightUI(); return; }
+  useSlot(game.heldSlot);
+}
 
 function toggleFlashlightUI() {
   if (game.phase !== "playing") return;
   // 아이템을 들고 있으면 집어넣고 손전등으로 복귀
   if (game.heldSlot >= 0) stowHeld();
-  player.toggleFlashlight();
+  const r = player.toggleFlashlight();
+  if (!r.ok && r.reason === "dead") {
+    ui.toast("손전등이 영구 고장 났다 — 야전 손전등으로 교체해야 한다", 2800);
+  }
   ui.setFlashlight(player.flashOn);
 }
 
@@ -292,7 +301,7 @@ function startGame() {
   ui.setObjective(`차단기 ${FUSE_TOTAL}개를 찾아 전원을 복구하세요`, 0, FUSE_TOTAL, null);
   ui.toast(`[${DIFFICULTY[settings.difficulty]?.label || "보통"}] 괴물이 너의 숨을 느꼈다. 조용히 움직여라.`, 3400);
   if (settings.difficulty === "nightmare") {
-    ui.toast("악몽: 지도 없음 · 충전소 없음 · 괴물 2마리 — 손전등이 유일한 빛", 4200);
+    ui.toast("악몽: 지도 없음 · 충전소 없음 · 괴물 2마리 — 손전등이 소진되면 영구 고장", 4200);
   }
   if (noise.micEnabled) {
     ui.setMic("pending");
@@ -797,8 +806,9 @@ function useSlot(i) {
     ui.toast("배터리 보급 — 손전등 충전", 1600);
   } else if (slot.id === "flashlight") {
     const B = CONFIG.battery;
-    if (player.battery >= B.max - 0.5) { ui.toast("손전등이 이미 새것과 같다", 1600); return; }
+    if (player.battery >= B.max - 0.5 && !player.flashDead) { ui.toast("손전등이 이미 새것과 같다", 1600); return; }
     player.battery = B.max;
+    player.flashDead = false;   // 악몽 영구 고장 회복 — 새 손전등으로 교체
     inv.takeAt(i);
     audio.blip(1320, 0.16);
     ui.toast("새 손전등으로 교체 — 배터리 100%", 1800);
@@ -1102,6 +1112,6 @@ ui.setFlashlight(true);
 ui.setHudVisible(false);
 
 // 디버그/테스트용 훅
-window.__silence = { game, player, monster, get monster2() { return monster2; }, get monster2Active() { return monster2Active; }, startGame, noise, world, ui, settings, STATE, input, audio, renderer, camera, scene, THREE, DIFFICULTY, CONFIG, applyDifficulty, smokes, decoys };
+window.__silence = { game, player, monster, get monster2() { return monster2; }, get monster2Active() { return monster2Active; }, startGame, noise, world, ui, settings, STATE, input, audio, renderer, camera, scene, THREE, DIFFICULTY, CONFIG, applyDifficulty, smokes, decoys, primaryAction, handleDigit, stowHeld, equipSlot, useSlot };
 
 loop();
