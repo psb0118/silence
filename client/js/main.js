@@ -267,7 +267,7 @@ function startGame() {
   ui.setFlashlight(true);
   ui.setHp(player.hp, player.maxHp);
   ui.setObjective(`차단기 ${FUSE_TOTAL}개를 찾아 전원을 복구하세요`, 0, FUSE_TOTAL, null);
-  ui.toast(`[${DIFFICULTY[settings.difficulty]?.label || "보통"}] 괴물가 너의 숨을 느꼈다. 조용히 움직여라.`, 3400);
+  ui.toast(`[${DIFFICULTY[settings.difficulty]?.label || "보통"}] 괴물이 너의 숨을 느꼈다. 조용히 움직여라.`, 3400);
   if (noise.micEnabled) {
     ui.setMic("pending");
     noise.attachMic().then(() => micFeedback(true));
@@ -449,7 +449,7 @@ function updateObjectives(dt) {
     if (d < nd) { nd = d; nearest = f; }
   }
 
-  // 상호작용 대상 — 우선순위: 은신 해제 > 퓨즈 > 잠긴 문 > 서랍(열기/닫기/줍기) > 은신처 > 게이트
+  // 상호작용 대상 — 우선순위(높을수록 나중에 덮어씀): 서랍 < 은신처 < 잠긴 문 < 퓨즈(목표물) < 게이트
   let target = null;
   let label = "";
 
@@ -473,28 +473,6 @@ function updateObjectives(dt) {
     }
   }
 
-  // 퓨즈 (서랍보다 우선 — 월드 오브젝트)
-  if (nearest && nd < CONFIG.interaction.pickupRange) {
-    target = { type: "fuse", fuse: nearest };
-    label = "차단기 회수";
-  }
-
-  // 잠긴 문 — 열쇠 ID 검사
-  let nearDoor = null, doorD = Infinity;
-  for (const door of world.lockedDoors) {
-    if (door.open) continue;
-    const d = Math.hypot(door.x - player.x, door.z - player.z);
-    if (d < doorD) { doorD = d; nearDoor = door; }
-  }
-  if (nearDoor && doorD < CONFIG.interaction.gateRange) {
-    const keyDef = getItemDef(nearDoor.keyId);
-    const keyName = keyDef ? keyDef.name : "열쇠";
-    target = { type: "lockedDoor", door: nearDoor };
-    label = player.inventory.hasKey(nearDoor.keyId)
-      ? `${nearDoor.label} 열기 (${keyName})`
-      : `${nearDoor.label} — 잠김`;
-  }
-
   // 은신처
   let hideSpot = null, hd = Infinity;
   if (!player.hidden) {
@@ -511,6 +489,28 @@ function updateObjectives(dt) {
         : hideSpot.type === "crawl" ? "기어들어 숨기"
         : "숨기";
     }
+  }
+
+  // 잠긴 문 — 열쇠 ID 검사 (은신처보다 우선)
+  let nearDoor = null, doorD = Infinity;
+  for (const door of world.lockedDoors) {
+    if (door.open) continue;
+    const d = Math.hypot(door.x - player.x, door.z - player.z);
+    if (d < doorD) { doorD = d; nearDoor = door; }
+  }
+  if (nearDoor && doorD < CONFIG.interaction.gateRange) {
+    const keyDef = getItemDef(nearDoor.keyId);
+    const keyName = keyDef ? keyDef.name : "열쇠";
+    target = { type: "lockedDoor", door: nearDoor };
+    label = player.inventory.hasKey(nearDoor.keyId)
+      ? `${nearDoor.label} 열기 (${keyName})`
+      : `${nearDoor.label} — 잠김`;
+  }
+
+  // 퓨즈(목표물) — 은신처·잠긴 문이 겹쳐도 반드시 회수 가능해야 함
+  if (nearest && nd < CONFIG.interaction.pickupRange) {
+    target = { type: "fuse", fuse: nearest };
+    label = "차단기 회수";
   }
 
   // 게이트
@@ -868,7 +868,7 @@ function loop() {
     audio.setAmbientMood(fear);
     audio.heartbeat(fear, dt);
 
-    // 괴물가 다가오면 조명이 '텔타'처럼 붉게 번져간다
+    // 괴물이 다가오면 조명이 '텔타'처럼 붉게 번져간다
     world.distress = (monster.state === STATE.CHASE || monster.state === STATE.ATTACK)
       ? { x: monster.x, z: monster.z }
       : null;
