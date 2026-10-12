@@ -96,6 +96,11 @@ export const CONFIG = {
     stuckTime: 1.1,
     repathInterval: 0.30,
 
+    // "들킨 상태" 판정 — 직전 목격/소음 인지가 이 시간 이내이고(가장 최근 인지 지점이
+    // 은신처와 가까우면) 은신해도 포기하지 않고 은신처를 뒤져 끝내 찾아낸다.
+    hideKnowledgeTime: 2.5,   // 직전 인지 이후 이 시간이 지나면 "모르는 상태"
+    hideKnowledgeDist: 5.0,   // 마지막 인지 지점 ↔ 은신처 거리 임계
+
     // 소리 → 즉시 추격 임계 (거리·세기 결합. 소리만으로는 자동 추격 X)
     loudIntensity: 0.6,
     loudScore: 0.34,

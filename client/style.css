@@ -424,6 +424,12 @@ html, body {
   position: relative;
 }
 .inv-slot.filled { color: #e7edf3; }
+.inv-slot.held {
+  border-color: rgba(255,214,120,0.95);
+  box-shadow: inset 0 0 10px rgba(255,214,120,0.3), 0 0 10px rgba(255,214,120,0.45);
+  color: #ffe9b0;
+  transform: translateY(-4px);
+}
 .inv-slot .keynum { position: absolute; left: 4px; top: 2px; font-size: 9px; opacity: 0.6; }
 .inv-slot .count { position: absolute; right: 4px; bottom: 2px; font-size: 9px; }
 .inv-slot.key-slot { font-weight: 700; }

@@ -50,6 +50,7 @@ export class Player {
 
     this.camera.rotation.order = "YXZ";
     this._buildFlashlight();
+    this._buildHeldItems();
     this.camera.position.set(this.x, this.y + this.eyeHeight, this.z);
     this.camera.rotation.y = this.yaw;
   }
@@ -101,6 +102,114 @@ export class Player {
     this.flashOn = true;
     this._flashTarget = 380.0;
     this.lens.material.color.setHex(0xfff2c4);
+  }
+
+  /* 손에 든 아이템 뷰모델 (숫자키로 꺼냈다가 같은 키로 사용) */
+  _buildHeldItems() {
+    const root = new THREE.Group();
+    root.visible = false;
+
+    const sleeve = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.08, 0.30),
+      new THREE.MeshStandardMaterial({ color: 0x363c44, roughness: 0.9 })
+    );
+    sleeve.rotation.x = -0.5;
+    sleeve.position.z = 0.10;
+    root.add(sleeve);
+
+    const fist = new THREE.Mesh(
+      new THREE.SphereGeometry(0.055, 10, 8),
+      new THREE.MeshStandardMaterial({ color: 0xb9a08a, roughness: 0.75 })
+    );
+    fist.scale.set(1, 0.85, 1.2);
+    root.add(fist);
+
+    const make = () => {
+      const g = new THREE.Group();
+      g.position.set(0, 0.05, -0.10);
+      g.visible = false;
+      root.add(g);
+      return g;
+    };
+
+    // 예비 배터리
+    const battery = make();
+    battery.add(new THREE.Mesh(
+      new THREE.CylinderGeometry(0.026, 0.026, 0.11, 12),
+      new THREE.MeshStandardMaterial({ color: 0xf5d76e, roughness: 0.45, metalness: 0.35 })
+    ));
+    const bCap = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.012, 0.012, 0.02, 10),
+      new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.5, metalness: 0.6 })
+    );
+    bCap.position.y = 0.06;
+    battery.add(bCap);
+    battery.rotation.x = -0.6;
+
+    // 구급상자 (붉은 십자)
+    const medkit = make();
+    medkit.add(new THREE.Mesh(
+      new THREE.BoxGeometry(0.14, 0.095, 0.06),
+      new THREE.MeshStandardMaterial({ color: 0xdad4ca, roughness: 0.7 })
+    ));
+    const crossMat = new THREE.MeshStandardMaterial({ color: 0xc0392b, roughness: 0.6 });
+    const ch1 = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.022, 0.005), crossMat);
+    ch1.position.z = 0.033;
+    const ch2 = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.07, 0.005), crossMat);
+    ch2.position.z = 0.033;
+    medkit.add(ch1, ch2);
+    medkit.rotation.x = -0.35;
+
+    // 연막탄
+    const smoke = make();
+    smoke.add(new THREE.Mesh(
+      new THREE.CylinderGeometry(0.028, 0.028, 0.1, 12),
+      new THREE.MeshStandardMaterial({ color: 0x9aa4ad, roughness: 0.6, metalness: 0.3 })
+    ));
+    const sTop = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.03, 0.03, 0.03, 12),
+      new THREE.MeshStandardMaterial({ color: 0xc0392b, roughness: 0.55 })
+    );
+    sTop.position.y = 0.065;
+    smoke.add(sTop);
+    smoke.rotation.x = -0.5;
+
+    // 소음장치
+    const decoy = make();
+    decoy.add(new THREE.Mesh(
+      new THREE.BoxGeometry(0.1, 0.075, 0.05),
+      new THREE.MeshStandardMaterial({ color: 0xc9a0ff, roughness: 0.5, metalness: 0.2 })
+    ));
+    const spk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.026, 0.026, 0.01, 14),
+      new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.8 })
+    );
+    spk.rotation.x = Math.PI / 2;
+    spk.position.z = 0.027;
+    const led = new THREE.Mesh(
+      new THREE.SphereGeometry(0.008, 8, 6),
+      new THREE.MeshStandardMaterial({ color: 0xff4040, emissive: 0xff2020, emissiveIntensity: 3 })
+    );
+    led.position.set(0.032, 0.024, 0.027);
+    decoy.add(spk, led);
+    decoy.rotation.x = -0.3;
+
+    this.heldModels = { battery, medkit, smoke, decoy };
+    root.position.set(0.24, -0.26, -0.44);
+    root.rotation.y = -0.05;
+    this.camera.add(root);
+    this.heldRoot = root;
+    this.heldId = null;
+  }
+
+  // id 없이 호출하면 집어넣는다 (손전등 손 모델을 다시 표시)
+  setHeldItem(id) {
+    this.heldId = (id && this.heldModels && this.heldModels[id]) ? id : null;
+    const holding = !!this.heldId;
+    this.heldRoot.visible = holding;
+    for (const k in this.heldModels) this.heldModels[k].visible = (k === this.heldId);
+    if (this.flashHand) this.flashHand.visible = !holding;
+    return holding;
   }
 
   setFlashlight(on) {
@@ -304,6 +413,11 @@ export class Player {
       this.flashHand.position.y = -0.24 + bobY * 0.5;
       this.flashHand.rotation.z = Math.sin(this.bobPhase) * 0.02;
     }
+    if (this.heldRoot && this.heldRoot.visible) {
+      this.heldRoot.position.x = 0.24 + bobX * 0.4;
+      this.heldRoot.position.y = -0.26 + bobY * 0.5;
+      this.heldRoot.rotation.z = Math.sin(this.bobPhase) * 0.02;
+    }
   }
 
   /* ---------- 은신 ---------- */
@@ -364,6 +478,7 @@ export class Player {
     const cur = this.spot.intensity;
     this.spot.intensity = damp(cur, this._flashTarget, 14, dt);
     if (this.flashHand) { this.flashHand.position.set(0.26, -0.24, -0.42); }
+    if (this.heldRoot) { this.heldRoot.position.set(0.24, -0.26, -0.44); }
   }
 
   _emitStep() {
@@ -420,6 +535,7 @@ export class Player {
     this.flashOn = true;
     this._flashTarget = 380.0;
     this.lens.material.color.setHex(0xfff2c4);
+    this.setHeldItem(null);
     this.camera.position.set(this.x, this.y + CONFIG.eyeHeight, this.z);
     this.camera.rotation.y = this.yaw;
     this.eyeHeight = CONFIG.eyeHeight;

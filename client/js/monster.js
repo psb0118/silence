@@ -45,6 +45,8 @@ export class Monster {
     this.seenHide = null;        // { spot, time } 목격한 은신처
     this.inspectSpot = null;     // 현재 조사 중인 은신처
     this._inspectTimer = 0;
+    this.knownHide = null;       // "들킨 상태"의 은신처 — 반드시 뒤져 찾아낸다
+    this.sawPlayerTime = -1e9;   // 플레이어를 실제로 목격한 시각
 
     // 공격
     this._attackPhase = 0;
@@ -387,6 +389,18 @@ export class Monster {
     if (best) this.seenHide = { spot: best, time: this.time };
   }
 
+  // 은신 직전에 괴물이 플레이어의 위치를 파악하고 있었는가 → "들킨 상태"
+  _hideKnowledge(player) {
+    if (player.inSafeZone || !player.hideSpot) return false;
+    const cfg = CONFIG.monster;
+    // 방금 목격했으면 (숨은 지점과 무관하게) 무조건 인지 상태
+    if (this.time - this.sawPlayerTime < cfg.hideKnowledgeTime) return true;
+    // 최근 소음/목격 인지 지점이 은신처 근처면 그 자리를 쫓는 상태
+    if (!this.lastKnownValid || this.time - this.lastKnownTime >= cfg.hideKnowledgeTime) return false;
+    const d = Math.hypot(this.lastKnown.x - player.hideSpot.x, this.lastKnown.z - player.hideSpot.z);
+    return d < cfg.hideKnowledgeDist;
+  }
+
   /* ================= 업데이트 ================= */
   update(dt, player) {
     this.time += dt;
@@ -397,11 +411,26 @@ export class Monster {
     if (this._grace > 0) this._grace -= dt;
     this.suspicion = clamp(this.suspicion - dt / cfg.suspicionTime, 0, 1.6);
 
-    // 플레이어 은신 진입 목격 판정
+    // 플레이어 은신 진입 판정
+    // "들킨 상태"(목격/위치 인지 직후)였으면 → 은신처를 확실히 알고 끝까지 뒤져 찾는다.
+    // 눈치채지 못하고 숨었으면 → knownHide가 비어 있어 조사해도 못 찾는다(못찾은 판정).
     if (player.hidden && (!this._wasHidden)) {
-      if (this._seen(player)) this.seenHide = { spot: player.hideSpot, time: this.time };
+      this.knownHide = this._hideKnowledge(player) ? player.hideSpot : null;
+      if (this.knownHide) {
+        const spot = player.hideSpot;
+        this.seenHide = { spot, time: this.time };
+        this.inspectSpot = null;
+        this._inspectTimer = 0;
+        this.lastKnown = { x: spot.x, z: spot.z };
+        this.lastKnownValid = true;
+        this.lastKnownTime = this.time;
+        this.suspicion = 1.6;
+        this.lostTimer = 0;
+        if (this.state !== STATE.SEARCH) this._setState(STATE.SEARCH);
+      }
     }
     this._wasHidden = player.hidden;
+    if (!player.hidden && this.knownHide) this.knownHide = null;
 
     const playerSafe = player.inSafeZone;
 
@@ -428,6 +457,7 @@ export class Monster {
       this.lastKnown = { x: player.x, z: player.z };
       this.lastKnownValid = true;
       this.lastKnownTime = this.time;
+      this.sawPlayerTime = this.time;
       this.lostTimer = 0;
       this.suspicion = 1.4;
       if (this._grace > 0) {
@@ -485,8 +515,9 @@ export class Monster {
       }
       case STATE.SEARCH: {
         speed = cfg.searchSpeed;
-        // 조사할 은신처가 있으면 그쪽으로
-        const insp = this.inspectSpot || (this.seenHide && (this.time - this.seenHide.time < 25) ? this.seenHide.spot : null);
+        // 조사할 은신처가 있으면 그쪽으로 (알고 있는 은신처가 최우선)
+        const insp = this.inspectSpot || this.knownHide ||
+          (this.seenHide && (this.time - this.seenHide.time < 25) ? this.seenHide.spot : null);
         if (insp) {
           this.target = { x: insp.x, z: insp.z };
           if (Math.hypot(insp.x - this.x, insp.z - this.z) < cfg.inspectRadius) {
@@ -504,7 +535,7 @@ export class Monster {
           this.target = this._searchTarget;
         }
         if (sees) { this._setState(STATE.CHASE); }
-        else if (this.suspicion < 0.08 && this.stateTime > cfg.searchTime) {
+        else if (!this.knownHide && this.suspicion < 0.08 && this.stateTime > cfg.searchTime) {
           this._setState(STATE.ROAM);
           this.lastKnownValid = false;
           this.seenHide = null;
@@ -586,15 +617,20 @@ export class Monster {
     const cfg = CONFIG.monster;
     this._inspectTimer = 0;
     const occupied = player.hidden && player.hideSpot === spot;
-    const witnessed = this.seenHide && this.seenHide.spot === spot;
-    if (occupied && (witnessed || this.suspicion > 0.5 || Math.random() < cfg.inspectFindChance)) {
-      // 발견 → 공격
+    // "들킨 상태"의 은신처 → 끝내 찾아내어 밖으로 끌어내고 공격
+    if (occupied && this.knownHide === spot) {
       this.lastKnown = { x: spot.x, z: spot.z };
+      this.lastKnownValid = true;
+      this.lastKnownTime = this.time;
+      if (this.seenHide && this.seenHide.spot === spot) this.seenHide = null;
+      this.knownHide = null;
+      player.exitHide();
       this._setState(STATE.ATTACK);
-      this._attackPhase = cfg.attackWindup; // 즉시 돌진
+      this._attackPhase = cfg.attackWindup * 0.4;
       return;
     }
-    // 못 찾음 → 다음 조사 대상 제거, 주변 수색
+    // 못 찾은 판정 — 인지하지 못한 은신처는 확률 없이 그냥 비어 있는 셈이다
+    if (!occupied && this.knownHide === spot) this.knownHide = null;
     if (this.seenHide && this.seenHide.spot === spot) this.seenHide = null;
     this.inspectSpot = null;
     this._pickSearchTarget();
@@ -972,6 +1008,8 @@ export class Monster {
     this.seenHide = null;
     this.inspectSpot = null;
     this._inspectTimer = 0;
+    this.knownHide = null;
+    this.sawPlayerTime = -1e9;
     this._caught = false;
     this._boundaryTarget = null;
     this._wasHidden = false;

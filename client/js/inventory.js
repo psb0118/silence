@@ -9,19 +9,19 @@ export const ITEM = {
   },
   BATTERY: {
     id: "battery", name: "예비 배터리", kind: "use", color: "#f5d76e",
-    desc: "손전등 배터리를 40 채운다. 숫자키로 사용."
+    desc: "손전등 배터리를 40 채운다. 숫자키로 꺼냈다가 다시 누르면 사용한다."
   },
   MEDKIT: {
     id: "medkit", name: "구급상자", kind: "use", color: "#e06080",
-    desc: "체력을 1 회복한다. 숫자키로 사용."
+    desc: "체력을 1 회복한다. 숫자키로 꺼냈다가 다시 누르면 사용한다."
   },
   SMOKE: {
     id: "smoke", name: "연막탄", kind: "use", color: "#b8c4cc",
-    desc: "앞으로 던져 괴물의 시야를 가린다. 숫자키로 사용."
+    desc: "앞으로 던져 괴물의 시야를 가린다. 숫자키로 꺼냈다가 다시 누르면 사용한다."
   },
   DECOY: {
     id: "decoy", name: "소음장치", kind: "use", color: "#c9a0ff",
-    desc: "앞으로 던져 괴물을 다른 곳으로 유인한다. 숫자키로 사용."
+    desc: "앞으로 던져 괴물을 다른 곳으로 유인한다. 숫자키로 꺼냈다가 다시 누르면 사용한다."
   },
   NOTE_SHED: {
     id: "note_shed", name: "찢긴 메모", kind: "note", color: "#d8d0b8",

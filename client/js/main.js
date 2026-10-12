@@ -98,6 +98,7 @@ const game = {
   alertText: null,
   lastSeenHide: null,
   eConsumed: false,  // 한 번의 E 누름 = 한 동작만 (재누를 때까지 대기)
+  heldSlot: -1,      // 손에 들고 있는 소모품 슬롯 번호 (-1 = 맨손)
   noteEscapedAt: -1e9, // 메모 닫기 Esc 시각 (포인터 잠금 해제 재잠금용)
   relockT: null,
   notesRead: {}   // 읽은 메모 id → true
@@ -156,7 +157,7 @@ function onKey(e, down) {
       break;
     case "Digit1": case "Digit2": case "Digit3": case "Digit4": case "Digit5":
     case "Digit6": case "Digit7": case "Digit8": case "Digit9":
-      if (down && !e.repeat && game.phase === "playing") useSlot(parseInt(c.slice(5), 10) - 1);
+      if (down && !e.repeat && game.phase === "playing") handleDigit(parseInt(c.slice(5), 10) - 1);
       break;
     case "Escape":
       // 메모(단서)가 떠 있으면 닫기만 하고 게임은 멈추지 않는다
@@ -187,6 +188,8 @@ renderer.domElement.addEventListener("mousedown", (e) => {
 
 function toggleFlashlightUI() {
   if (game.phase !== "playing") return;
+  // 아이템을 들고 있으면 집어넣고 손전등으로 복귀
+  if (game.heldSlot >= 0) stowHeld();
   player.toggleFlashlight();
   ui.setFlashlight(player.flashOn);
 }
@@ -240,6 +243,7 @@ function startGame() {
   game.batteryWarned = false;
   game.lastMonsterState = STATE.ROAM;
   game.eConsumed = false;
+  game.heldSlot = -1;
   showAlert(null);
   game.notesRead = {};
   ui.hideNote();
@@ -252,7 +256,7 @@ function startGame() {
   player.inventory.clear();
   world.resetInteractive();
   monster.rebuildGrid();
-  ui.setInventory(player.inventory);
+  ui.setInventory(player.inventory, -1);
   if (world.chargeStation) world.chargeStation.setActive(false);
   noise.level = 0;
   noise.impulse = 0;
@@ -710,6 +714,46 @@ function updateEffects(dt) {
 }
 
 /* ================= 인벤토리 사용 ================= */
+// 숫자키: 소모품은 1회=꺼내기(손전등 off), 같은 키 재누르기=사용. 열쇠/메모는 즉시 안내·열람.
+function handleDigit(i) {
+  const slot = player.inventory.slots[i];
+  if (!slot || slot.count <= 0) return;
+  const def = getItemDef(slot.id);
+  if (def && def.kind === "use") {
+    if (game.heldSlot === i) useSlot(i);
+    else equipSlot(i);
+  } else {
+    useSlot(i);
+  }
+}
+
+function equipSlot(i) {
+  const slot = player.inventory.slots[i];
+  if (!slot || slot.count <= 0) return;
+  const def = getItemDef(slot.id);
+  game.heldSlot = i;
+  player.setHeldItem(slot.id);
+  if (player.flashOn) player.setFlashlight(false);
+  ui.setFlashlight(false);
+  ui.setInventory(player.inventory, game.heldSlot);
+  ui.toast(`${def ? def.name : slot.name} 준비 — 같은 숫자키로 사용`, 2400);
+}
+
+function stowHeld() {
+  if (game.heldSlot < 0) return false;
+  game.heldSlot = -1;
+  player.setHeldItem(null);
+  ui.setInventory(player.inventory, -1);
+  return true;
+}
+
+// 소모로 인벤토리가 비면 들고 있던 손 모델도 집어넣는다
+function syncHeld() {
+  if (game.heldSlot < 0) return;
+  const s = player.inventory.slots[game.heldSlot];
+  if (!s || s.count <= 0) stowHeld();
+}
+
 function useSlot(i) {
   const inv = player.inventory;
   const slot = inv.slots[i];
@@ -756,7 +800,8 @@ function useSlot(i) {
   } else {
     return;
   }
-  ui.setInventory(inv);
+  syncHeld();
+  ui.setInventory(player.inventory, game.heldSlot >= 0 ? game.heldSlot : -1);
 }
 
 /* ================= 환경 공포 연출 ================= */

@@ -432,13 +432,16 @@ export class UI {
     this._toastT = setTimeout(() => this.hintToast.classList.remove("show"), ms);
   }
 
-  setInventory(inv) {
+  setInventory(inv, held) {
     if (!this.invBar) return;
+    if (held !== undefined) this._held = held;
+    if (this._held === undefined) this._held = -1;
     this.invBar.innerHTML = '';
     for (let i = 0; i < inv.slots.length; i++) {
       const slot = inv.slots[i];
       const el = document.createElement('div');
       el.className = 'inv-slot' + (slot.count > 0 ? ' filled' : '');
+      if (i === this._held && slot.count > 0) el.classList.add('held');
       if (slot.count > 0 && slot.id && slot.id.startsWith('key_')) {
         el.classList.add('key-slot');
         el.dataset.key = slot.id;
