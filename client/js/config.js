@@ -75,7 +75,7 @@ export const CONFIG = {
     sightChase: 19,        // 추격 중 시야
     sightFov: 0.72,        // 시야각(코사인 임계) — 정면 위주
 
-    hearBase: 28,          // intensity=1 기준 청취 거리
+    hearBase: 22,          // intensity=1 기준 청취 거리 (거리 기반 감지)
     hearMinIntensity: 0.06,
 
     listenTime: 1.5,       // 소리 방향을 살피는 시간
@@ -96,10 +96,10 @@ export const CONFIG = {
     stuckTime: 1.1,
     repathInterval: 0.30,
 
-    // 즉시 추격 임계 (난이도별 조절 가능)
+    // 소리 → 즉시 추격 임계 (거리·세기 결합. 소리만으로는 자동 추격 X)
     loudIntensity: 0.6,
-    loudScore: 0.30,
-    loudDist: 8,
+    loudScore: 0.34,
+    loudDist: 7,
     // 은신처 발견/조사 확률
     inspectFindChance: 0.55,
     hideInspectChance: 0.45
@@ -153,7 +153,7 @@ export const DIFFICULTY = {
       searchSpeed: 2.3,
       sightBase: 11,
       sightChase: 14,
-      hearBase: 20,
+      hearBase: 16,
       senseRadius: 2.6,
       loseTime: 2.6,
       suspicionTime: 8,
@@ -162,7 +162,7 @@ export const DIFFICULTY = {
       attackWindup: 0.65,
       loudIntensity: 0.72,
       loudScore: 0.42,
-      loudDist: 5.5,
+      loudDist: 5,
       inspectFindChance: 0.35,
       hideInspectChance: 0.30
     },
@@ -188,7 +188,7 @@ export const DIFFICULTY = {
       searchSpeed: 3.2,
       sightBase: 18,
       sightChase: 23,
-      hearBase: 34,
+      hearBase: 28,
       senseRadius: 4.2,
       loseTime: 5.0,
       suspicionTime: 16,
@@ -196,8 +196,8 @@ export const DIFFICULTY = {
       searchRadius: 22,
       attackWindup: 0.4,
       loudIntensity: 0.5,
-      loudScore: 0.22,
-      loudDist: 10,
+      loudScore: 0.28,
+      loudDist: 9,
       inspectFindChance: 0.75,
       hideInspectChance: 0.60
     },

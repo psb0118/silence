@@ -275,6 +275,8 @@ export class Monster {
 
   /* ================= 인지 ================= */
   _seen(player) {
+    // 안전 구역: 시각 인식 완전 차단
+    if (player.inSafeZone) return false;
     if (player.hidden) return false;
     const d = Math.hypot(player.x - this.x, player.z - this.z);
     const sight = (this.state === STATE.CHASE || this.state === STATE.ATTACK) ? CONFIG.monster.sightChase : CONFIG.monster.sightBase;
@@ -314,6 +316,8 @@ export class Monster {
     this._setState(STATE.RECOVER);
   }
 
+  // 거리 기반 청취: 세기가 클수록 멀리서 들리고, 가까울수록 작은 소리에도 반응한다.
+  // 안전 구역에서 발생한 소음은 감지 대상에서 제외한다.
   _consumeNoise() {
     const evs = this.noise.drainEvents();
     const cfg = CONFIG.monster;
@@ -321,10 +325,15 @@ export class Monster {
     for (let i = 0; i < evs.length; i++) {
       const e = evs[i];
       if (e.intensity < cfg.hearMinIntensity) continue;
+      // 안전 구역 소음 무시
+      if (this.world.inSafeZone(e.x, e.z)) continue;
       const d = Math.hypot(e.x - this.x, e.z - this.z);
       const range = cfg.hearBase * e.intensity;
       if (d > range) continue;
-      const score = e.intensity * (1 - d / range);
+      // 벽/문 뒤면 감쇠 (완전 음향 시뮬레이션은 아님)
+      let atten = 1;
+      if (this.world.lineBlocked(this.x, this.z, e.x, e.z)) atten = 0.45;
+      const score = e.intensity * (1 - d / range) * atten;
       if (score > bestScore) { bestScore = score; best = { e, d, score }; }
     }
     if (!best) return null;
@@ -333,15 +342,16 @@ export class Monster {
 
   _reactToNoise(best) {
     const cfg = CONFIG.monster;
+    // 조사 목표는 '소리가 난 지점' (플레이어가 이미 이동했을 수 있음)
     this.lastKnown = { x: best.e.x, z: best.e.z };
     this.lastKnownValid = true;
     this.lastKnownTime = this.time;
     this.lostTimer = 0;
-    this.suspicion = clamp(this.suspicion + best.score * 0.9 + (best.e.intensity > 0.6 ? 0.4 : 0.1), 0, 1.4);
+    this.suspicion = clamp(this.suspicion + best.score * 0.9 + (best.e.intensity > 0.6 ? 0.3 : 0.08), 0, 1.4);
 
     // 은신 중 소음 → 의심
     const p = this._playerRef;
-    if (p && p.hidden) {
+    if (p && p.hidden && !p.inSafeZone) {
       this.suspicion = clamp(this.suspicion + 0.5, 0, 1.6);
       if (!this.seenHide) this._assignNearestHide(p.x, p.z);
     }
@@ -354,18 +364,18 @@ export class Monster {
       this._searchTarget = { x: best.e.x, z: best.e.z };
       return;
     }
-    // 크고 가까운 소리(걷기 포함) → 즉시 추격. 소리를 좇아 끝까지 쫓아온다.
-    const loud = best.e.intensity >= cfg.loudIntensity || best.score > cfg.loudScore || best.d < cfg.loudDist;
-    if (loud) {
+    // 소리만으로는 자동 추격하지 않는다.
+    // 가까운 강한 소리 또는 매우 높은 점수(가까움×세기)일 때만 CHASE.
+    const closeAndLoud = best.d < cfg.loudDist && best.e.intensity >= 0.45;
+    const strongScore = best.score > cfg.loudScore;
+    if (closeAndLoud || strongScore) {
       this._setState(STATE.CHASE);
     } else if (st === STATE.SEARCH) {
-      // 수색 중 다른 소리가 들리면 그 방향으로 몸을 돌린다
       this.inspectSpot = null;
       this._searchTarget = { x: best.e.x, z: best.e.z };
-    } else if (st === STATE.ROAM && best.e.intensity >= 0.4) {
+    } else if ((st === STATE.ROAM || st === STATE.LISTEN) && best.score > 0.10) {
       this._setState(STATE.INVESTIGATE);
     }
-    // INVESTIGATE/STALK는 이미 lastKnown(가장 최근 소리)을 향하므로 갱신만으로 충분
   }
 
   _assignNearestHide(x, z) {
@@ -393,15 +403,27 @@ export class Monster {
     }
     this._wasHidden = player.hidden;
 
-    const hearBest = this._consumeNoise();
-    const sees = this._seen(player);
-    const dToPlayer = Math.hypot(player.x - this.x, player.z - this.z);
     const playerSafe = player.inSafeZone;
-    const veryClose = !player.hidden && dToPlayer < cfg.senseRadius;
+
+    // 안전 구역 진입: 추격·공격 즉시 중단, 안전 구역 내부 lastKnown 무효화
+    if (playerSafe && (this.state === STATE.CHASE || this.state === STATE.ATTACK)) {
+      this._caught = false;
+      this._attackPhase = 0;
+      this.suspicion = Math.min(this.suspicion, 0.4);
+      if (this.lastKnownValid && this.world.inSafeZone(this.lastKnown.x, this.lastKnown.z)) {
+        this.lastKnownValid = false;
+      }
+      this._setState(STATE.SEARCH);
+    }
+
+    const hearBest = playerSafe ? null : this._consumeNoise();
+    const sees = playerSafe ? false : this._seen(player);
+    const dToPlayer = Math.hypot(player.x - this.x, player.z - this.z);
+    const veryClose = !player.hidden && !playerSafe && dToPlayer < cfg.senseRadius;
 
     if (hearBest) this._reactToNoise(hearBest);
 
-    // 직접 목격
+    // 직접 목격 (안전 구역에서는 절대 실행되지 않음)
     if (sees || veryClose) {
       this.lastKnown = { x: player.x, z: player.z };
       this.lastKnownValid = true;

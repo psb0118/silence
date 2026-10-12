@@ -32,6 +32,11 @@ export class UI {
     this.hintToast = $("#hint-toast");
     this.invBar = $("#inventory-bar");
     this.invEmpty = $("#inv-empty");
+    this.invDetail = $("#inv-detail");
+    this.invDetailText = $("#inv-detail-text");
+    this.noteModal = $("#note-modal");
+    this.noteTitle = $("#note-title");
+    this.noteBody = $("#note-body");
     this.minimap = $("#minimap");
     this.minimapCtx = this.minimap && this.minimap.getContext("2d");
     this.mapVisible = false;
@@ -45,6 +50,14 @@ export class UI {
     this._damageTimer = 0;
     this._micLabel = "확인 중…";
     this._micClass = "";
+    this._detailT = null;
+    this._noteT = null;
+    if (this.noteModal) {
+      this.noteModal.addEventListener("click", () => this.hideNote());
+      document.addEventListener("keydown", (e) => {
+        if (e.code === "Escape") this.hideNote();
+      });
+    }
     this._drawScareFace();
   }
 
@@ -239,13 +252,14 @@ export class UI {
       c.strokeRect(mx(w.exit.x) - 5, mz(w.exit.z) - 5, 10, 10);
     }
 
-    // 잠긴 문
+    // 잠긴 문 (열린 문은 회색으로)
     if (w.lockedDoors) for (const d of w.lockedDoors) {
       const x0 = d.axis === "x" ? d.x - d.width / 2 : d.x, x1 = d.axis === "x" ? d.x + d.width / 2 : d.x;
       const z0 = d.axis === "z" ? d.z - d.width / 2 : d.z, z1 = d.axis === "z" ? d.z + d.width / 2 : d.z;
-      c.strokeStyle = "#ff5740"; c.lineWidth = 2.5;
+      c.strokeStyle = d.open ? "rgba(120,140,160,0.5)" : "#ff5740";
+      c.lineWidth = 2.5;
       c.beginPath(); c.moveTo(mx(x0), mz(z0)); c.lineTo(mx(x1), mz(z1)); c.stroke();
-      c.fillStyle = "#ff5740";
+      c.fillStyle = d.open ? "rgba(120,140,160,0.5)" : "#ff5740";
       c.beginPath(); c.arc(mx(d.x), mz(d.z), 2.4, 0, Math.PI * 2); c.fill();
     }
 
@@ -258,18 +272,13 @@ export class UI {
       c.shadowBlur = 0;
     }
 
-    // 서랍
+    // 서랍 (획득 완료 여부 기준)
     if (w.drawers) for (const d of w.drawers) {
-      c.fillStyle = d.searched ? "rgba(120,140,160,0.30)" : (d.lootId ? "#ffb347" : "#8b97a5");
+      c.fillStyle = d.looted ? "rgba(120,140,160,0.30)" : (d.lootId ? "#ffb347" : "#8b97a5");
       c.fillRect(mx(d.x) - 2, mz(d.z) - 2, 4, 4);
     }
 
-    // 괴물
-    if (m) {
-      c.fillStyle = "#ff3b3b"; c.shadowColor = "#ff3b3b"; c.shadowBlur = 6;
-      c.beginPath(); c.arc(mx(m.x), mz(m.z), 3.6, 0, Math.PI * 2); c.fill();
-      c.shadowBlur = 0;
-    }
+    // 괴물 위치는 지도에 표시하지 않는다 (명세: 미니맵에 몬스터 표시 금지)
 
     // 플레이어 (전방 화살표)
     if (p) {
@@ -433,9 +442,42 @@ export class UI {
       const slot = inv.slots[i];
       const el = document.createElement('div');
       el.className = 'inv-slot' + (slot.count > 0 ? ' filled' : '');
-      el.innerHTML = '<span class="keynum">' + (i + 1) + '</span>' + (slot.count > 0 ? '<span>' + slot.name + '</span><span class="count">' + slot.count + '</span>' : '');
+      if (slot.count > 0 && slot.id && slot.id.startsWith('key_')) {
+        el.classList.add('key-slot');
+        el.dataset.key = slot.id;
+      }
+      let html = '<span class="keynum">' + (i + 1) + '</span>';
+      if (slot.count > 0) {
+        html += '<span>' + slot.name + '</span><span class="count">' + slot.count + '</span>';
+      }
+      el.innerHTML = html;
       this.invBar.appendChild(el);
     }
+  }
+
+  /* 획득 직후 짧은 아이템 설명 (자동 소멸) */
+  showItemDetail(def, ms = 3400) {
+    if (!this.invDetail || !def) return;
+    this.invDetailText.textContent = def.desc || def.name;
+    this.invDetail.classList.remove('hidden');
+    clearTimeout(this._detailT);
+    this._detailT = setTimeout(() => this.invDetail.classList.add('hidden'), ms);
+  }
+
+  hideInvDetail() {
+    if (this.invDetail) this.invDetail.classList.add('hidden');
+    clearTimeout(this._detailT);
+  }
+
+  /* 메모/단서 — 클릭 또는 ESC로 닫기 */
+  showNote(def) {
+    if (!this.noteModal || !def) return;
+    this.noteTitle.textContent = def.name;
+    this.noteBody.textContent = def.text || def.desc || "";
+    this.noteModal.classList.remove('hidden');
+  }
+  hideNote() {
+    if (this.noteModal) this.noteModal.classList.add('hidden');
   }
 
   showInvEmpty(ms = 1200) {

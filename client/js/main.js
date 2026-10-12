@@ -7,6 +7,7 @@ import { NoiseSystem } from "./noise.js";
 import { AudioEngine } from "./audio.js";
 import { Monster, STATE } from "./monster.js";
 import { UI } from "./ui.js";
+import { getItemDef } from "./inventory.js";
 
 /* ================= 설정 ================= */
 const settings = Object.assign(
@@ -92,7 +93,11 @@ const game = {
   interactHold: 0,
   interactTarget: null,
   batteryWarned: false,
-  lastMonsterState: STATE.ROAM
+  lastMonsterState: STATE.ROAM,
+  alertTimer: 0,
+  alertText: null,
+  lastSeenHide: null,
+  notesRead: {}   // 읽은 메모 id → true
 };
 const FUSE_TOTAL = world.fuses.length;
 
@@ -211,6 +216,11 @@ function startGame() {
   game.exitPowered = false;
   game.collected = 0;
   game.batteryWarned = false;
+  game.lastMonsterState = STATE.ROAM;
+  showAlert(null);
+  game.notesRead = {};
+  ui.hideNote();
+  ui.hideInvDetail();
   game.ambientTimer = rand(CONFIG.assist.ambientScareMin, CONFIG.assist.ambientScareMax);
   clearEffects();
   player.respawn();
@@ -351,6 +361,34 @@ function toggleMinimap() {
   ui.toast(mapOn ? "지도 열기 (M으로 닫기)" : "지도 닫기", 1200);
 }
 
+/* ================= 경고 배너 (상황 발생 시에만, 시간 제한) ================= */
+function showAlert(text, duration = 2.8) {
+  if (!text) {
+    game.alertText = null;
+    game.alertTimer = 0;
+    ui.setAlert(null);
+    return;
+  }
+  // 같은 문구가 아직 떠 있으면 연장만
+  if (game.alertText === text && game.alertTimer > 0.4) {
+    game.alertTimer = Math.max(game.alertTimer, duration * 0.5);
+    return;
+  }
+  game.alertText = text;
+  game.alertTimer = duration;
+  ui.setAlert(text);
+}
+
+function tickAlert(dt) {
+  if (game.alertTimer > 0) {
+    game.alertTimer -= dt;
+    if (game.alertTimer <= 0) {
+      game.alertText = null;
+      ui.setAlert(null);
+    }
+  }
+}
+
 /* ================= 목표 / 상호작용 ================= */
 function updateObjectives(dt) {
   // 가장 가까운 퓨즈
@@ -361,9 +399,51 @@ function updateObjectives(dt) {
     if (d < nd) { nd = d; nearest = f; }
   }
 
-  // 상호작용 대상 판정
+  // 상호작용 대상 — 우선순위: 은신 해제 > 퓨즈 > 잠긴 문 > 서랍(열기/닫기/줍기) > 은신처 > 게이트
   let target = null;
   let label = "";
+
+  // 서랍 (닫힘→열기 / 열림+아이템→줍기 / 열림+빈 or 획득완료→닫기)
+  let nearDrawer = null, drD = Infinity;
+  for (const dr of world.drawers) {
+    const d = Math.hypot(dr.x - player.x, dr.z - player.z);
+    if (d < drD) { drD = d; nearDrawer = dr; }
+  }
+  if (nearDrawer && drD < CONFIG.interaction.pickupRange && !nearDrawer.busy) {
+    if (!nearDrawer.opened) {
+      target = { type: "drawer", drawer: nearDrawer, phase: "open" };
+      label = "서랍 열기";
+    } else if (nearDrawer.lootId && !nearDrawer.looted) {
+      target = { type: "drawer", drawer: nearDrawer, phase: "take" };
+      const def = getItemDef(nearDrawer.lootId);
+      label = `${def ? def.name : nearDrawer.lootName} 획득`;
+    } else {
+      target = { type: "drawer", drawer: nearDrawer, phase: "close" };
+      label = "서랍 닫기";
+    }
+  }
+
+  // 퓨즈 (서랍보다 우선 — 월드 오브젝트)
+  if (nearest && nd < CONFIG.interaction.pickupRange) {
+    target = { type: "fuse", fuse: nearest };
+    label = "차단기 회수";
+  }
+
+  // 잠긴 문 — 열쇠 ID 검사
+  let nearDoor = null, doorD = Infinity;
+  for (const door of world.lockedDoors) {
+    if (door.open) continue;
+    const d = Math.hypot(door.x - player.x, door.z - player.z);
+    if (d < doorD) { doorD = d; nearDoor = door; }
+  }
+  if (nearDoor && doorD < CONFIG.interaction.gateRange) {
+    const keyDef = getItemDef(nearDoor.keyId);
+    const keyName = keyDef ? keyDef.name : "열쇠";
+    target = { type: "lockedDoor", door: nearDoor };
+    label = player.inventory.hasKey(nearDoor.keyId)
+      ? `${nearDoor.label} 열기 (${keyName})`
+      : `${nearDoor.label} — 잠김`;
+  }
 
   // 은신처
   let hideSpot = null, hd = Infinity;
@@ -383,55 +463,35 @@ function updateObjectives(dt) {
     }
   }
 
-  if (nearest && nd < CONFIG.interaction.pickupRange) { target = { type: "fuse", fuse: nearest }; label = "차단기 회수"; }
+  // 게이트
   const gd = Math.hypot(world.exit.x - player.x, world.exit.z - player.z);
-  if (game.exitPowered && gd < CONFIG.interaction.gateRange) { target = { type: "gate" }; label = "철문 열고 탈출"; }
-
-  // 잠긴 문
-  let nearDoor = null, doorD = Infinity;
-  for (const door of world.lockedDoors) {
-    if (door.open) continue;
-    const d = Math.hypot(door.x - player.x, door.z - player.z);
-    if (d < doorD) { doorD = d; nearDoor = door; }
-  }
-  if (nearDoor && doorD < CONFIG.interaction.gateRange) {
-    target = { type: "lockedDoor", door: nearDoor };
-    label = player.inventory.hasKey() ? `${nearDoor.label} 열기 (열쇠)` : `${nearDoor.label} — 잠김 (열쇠 필요)`;
-  }
-
-  // 서랍 (2단계: 열기 → 아이템 있으면 줍기)
-  let nearDrawer = null, drD = Infinity;
-  for (const dr of world.drawers) {
-    if (dr.searched) continue;
-    const d = Math.hypot(dr.x - player.x, dr.z - player.z);
-    if (d < drD) { drD = d; nearDrawer = dr; }
-  }
-  if (nearDrawer && drD < CONFIG.interaction.pickupRange) {
-    if (!nearDrawer.opened) {
-      target = { type: "drawer", drawer: nearDrawer, phase: "open" };
-      label = "서랍 열기";
-    } else {
-      target = { type: "drawer", drawer: nearDrawer, phase: "take" };
-      label = nearDrawer.lootId ? "아이템 줍기 (E)" : "서랍 닫고 돌아가기";
-    }
+  if (game.exitPowered && gd < CONFIG.interaction.gateRange) {
+    target = { type: "gate" };
+    label = "철문 열고 탈출";
   }
 
   const holdingE = !!eKeyDown;
   if (target && holdingE) {
-    if (!game.interactTarget || game.interactTarget.type !== target.type || game.interactTarget.fuse !== target.fuse || game.interactTarget.hide !== target.hide || game.interactTarget.drawer !== target.drawer || game.interactTarget.door !== target.door) {
-      game.interactHold = 0;
-    }
+    const same = game.interactTarget &&
+      game.interactTarget.type === target.type &&
+      game.interactTarget.fuse === target.fuse &&
+      game.interactTarget.hide === target.hide &&
+      game.interactTarget.drawer === target.drawer &&
+      game.interactTarget.door === target.door &&
+      game.interactTarget.phase === target.phase;
+    if (!same) game.interactHold = 0;
     game.interactTarget = target;
-    const time = target.type === "fuse" ? CONFIG.interaction.pickupTime
+    const time =
+      target.type === "fuse" ? CONFIG.interaction.pickupTime
       : target.type === "hide" ? CONFIG.interaction.hideTime
-      : target.type === "drawer" ? (target.phase === "take" ? 0.5 : 0.9)
+      : target.type === "drawer" ? (target.phase === "take" ? 0.45 : 0.7)
       : target.type === "lockedDoor" ? 0.8
       : 1.4;
     game.interactHold += dt / time;
     if (game.interactHold >= 1) {
       if (target.type === "fuse") collectFuse(target.fuse);
       else if (target.type === "hide") { player.enterHide(target.hide); noise.drainEvents(); }
-      else if (target.type === "drawer") searchDrawer(target.drawer, target.phase === "take");
+      else if (target.type === "drawer") handleDrawer(target.drawer, target.phase);
       else if (target.type === "lockedDoor") tryOpenDoor(target.door);
       else winGame();
       game.interactHold = 0;
@@ -474,6 +534,65 @@ function collectFuse(f) {
 let eKeyDown = false;
 document.addEventListener("keydown", (e) => { if (e.code === "KeyE") eKeyDown = true; });
 document.addEventListener("keyup", (e) => { if (e.code === "KeyE") eKeyDown = false; });
+
+/* ================= 서랍 처리 ================= */
+// phase: "open" | "take" | "close"
+function handleDrawer(d, phase) {
+  if (!d) return;
+  if (phase === "open") {
+    if (d.opened || d.busy) return;
+    world.toggleDrawer(d);
+    audio.blip(520, 0.1);
+    noise.addImpulse(0.16, player.x, player.z, "search");
+    if (!d.lootId) ui.toast("서랍이 비어 있다", 1400);
+    return;
+  }
+  if (phase === "take") {
+    if (!d.opened || d.looted || !d.lootId) return;
+    const res = player.inventory.add(d.lootId, d.lootName, 1);
+    if (!res.ok) {
+      audio.blip(200, 0.12);
+      ui.showInvEmpty();
+      return;
+    }
+    // 인벤토리 추가 성공 후에만 월드 상태 변경
+    world.lootDrawer(d);
+    const def = getItemDef(d.lootId);
+    audio.blip(d.lootId.startsWith("key_") ? 1320 : 980, 0.16);
+    noise.addImpulse(0.28, player.x, player.z, "search");
+    ui.setInventory(player.inventory);
+    ui.showItemDetail(def);
+    if (d.lootId === "key_shed") ui.toast("획득: 창고 열쇠 — 잠긴 창고 문에 사용한다", 3000);
+    else if (d.lootId === "key_store") ui.toast("획득: 저장고 열쇠 — 잠긴 저장고 문에 사용한다", 3000);
+    else if (def && def.kind === "note") ui.toast(`획득: ${def.name} — 숫자키로 다시 읽기`, 2600);
+    else ui.toast(`획득: ${def ? def.name : d.lootName}`, 1800);
+    return;
+  }
+  if (phase === "close") {
+    if (!d.opened || d.busy) return;
+    world.toggleDrawer(d);
+    audio.blip(380, 0.08);
+    return;
+  }
+}
+
+/* ================= 잠긴 문 ================= */
+function tryOpenDoor(door) {
+  if (!door || door.open) return;
+  if (!player.inventory.hasKey(door.keyId)) {
+    const keyDef = getItemDef(door.keyId);
+    ui.toast(`이 문에 맞는 열쇠가 필요하다. (${keyDef ? keyDef.name : "특정 열쇠"})`, 2400);
+    audio.blip(240, 0.14);
+    return;
+  }
+  // 열쇠는 소모하지 않음 — 문 개방만
+  world.openLockedDoor(door);
+  monster.rebuildGrid();
+  noise.addImpulse(0.9, player.x, player.z, "door");
+  ui.setInventory(player.inventory);
+  ui.toast(`${door.label} 잠금 해제`, 2000);
+  audio.blip(660, 0.2);
+}
 
 /* ================= 연막 / 소음장치 이펙트 ================= */
 const smokes = [];   // {x,z,r,ttl,maxTtl,mesh}
@@ -542,6 +661,7 @@ function useSlot(i) {
   const inv = player.inventory;
   const slot = inv.slots[i];
   if (!slot || slot.count <= 0) return;
+  const def = getItemDef(slot.id);
   if (slot.id === "battery") {
     const B = CONFIG.battery;
     if (player.battery >= B.max - 0.5) { ui.toast("배터리가 이미 가득 찼습니다", 1600); return; }
@@ -549,8 +669,8 @@ function useSlot(i) {
     inv.takeAt(i);
     audio.blip(1180, 0.14);
     ui.toast("배터리 보급 — 손전등 충전", 1600);
-  } else if (slot.id === "key") {
-    ui.toast("열쇠는 잠긴 문 앞에서 자동으로 사용됩니다", 2000);
+  } else if (slot.id && slot.id.startsWith("key_")) {
+    ui.toast(`${def ? def.name : "열쇠"} — 잠긴 문 앞에서 E를 눌러 사용한다`, 2200);
   } else if (slot.id === "medkit") {
     if (player.hp >= player.maxHp) { ui.toast("체력이 이미 가득 찼습니다", 1600); return; }
     player.hp = Math.min(player.maxHp, player.hp + 1);
@@ -574,63 +694,17 @@ function useSlot(i) {
     noise.addImpulse(0.6, x, z, "throw");
     audio.blip(660, 0.12);
     ui.toast("소음장치 가동 — 괴물을 다른 곳으로 유인한다", 2200);
+  } else if (def && def.kind === "note") {
+    // 메모: 소모하지 않고 다시 읽는다
+    game.notesRead[slot.id] = true;
+    audio.blip(700, 0.1);
+    ui.showNote(def);
+    ui.toast(`읽음: ${def.name}`, 1600);
   } else {
     return;
   }
   ui.setInventory(inv);
 }
-
-function searchDrawer(d, take) {
-  if (!d) return;
-  if (!take) {
-    // 1단계: 열기
-    if (!d.opened) {
-      world.openDrawer(d);
-      audio.blip(520, 0.1);
-      noise.addImpulse(0.16, player.x, player.z, "search");
-      if (d.lootId === null) {
-        // 빈 서랍 → 닫고 넘어가기
-        d.searched = true;
-        d.opened = false;
-        audio.blip(220, 0.1);
-        ui.toast("서랍이 비어 있다", 1500);
-      }
-    }
-    return;
-  }
-  // 2단계: 아이템 줍기 (빈 서랍은 자동으로 닫힘)
-  if (d.searched) return;
-  if (d.lootId === null) { d.searched = true; d.opened = false; return; }
-  const res = player.inventory.add(d.lootId, d.lootName, 1);
-  if (!res.ok) {
-    audio.blip(200, 0.12);
-    ui.showInvEmpty();
-    return;
-  }
-  d.searched = true;
-  d.opened = false; // 획득 후 닫기
-  if (d.lootId === "key") audio.blip(1320, 0.18); else audio.blip(980, 0.14);
-  noise.addImpulse(0.28, player.x, player.z, "search");
-  ui.setInventory(player.inventory);
-  ui.toast(`획득: ${d.lootName}`, 1600);
-}
-
-function tryOpenDoor(door) {
-  if (!door || door.open) return;
-  if (!player.inventory.hasKey()) {
-    ui.toast("잠겨 있다 — 열쇠가 필요하다", 2000);
-    audio.blip(240, 0.14);
-    return;
-  }
-  player.inventory.removeKey();
-  world.openLockedDoor(door);
-  monster.rebuildGrid();
-  noise.addImpulse(0.9, player.x, player.z, "door");
-  ui.setInventory(player.inventory);
-  ui.toast(`${door.label} 잠금 해제`, 2000);
-  audio.blip(660, 0.2);
-}
-
 
 /* ================= 환경 공포 연출 ================= */
 const shadowTex = makeShadowFigure();
@@ -711,15 +785,26 @@ function loop() {
     if (cs) cs.setActive(player.charging);
     if (player.batteryLow && !game.batteryWarned) {
       game.batteryWarned = true;
+      showAlert("손전등 배터리가 부족하다.", 3.0);
       ui.toast("배터리 부족 — 손전등이 곧 꺼집니다", 2600);
     }
     if (!player.batteryLow) game.batteryWarned = false;
 
-    // 몬스터 조우 카운터
-    if (monster.state === STATE.CHASE && game.lastMonsterState !== STATE.CHASE) game.encounters++;
-    game.lastMonsterState = monster.state;
+    // 몬스터 조우 카운터 + 상태 전이 시에만 경고 문구 갱신
+    const prevSt = game.lastMonsterState;
+    const st = monster.state;
+    if (st === STATE.CHASE && prevSt !== STATE.CHASE) game.encounters++;
+    if (st !== prevSt) {
+      if (st === STATE.CHASE) showAlert("괴물이 온다!", 3.0);
+      else if (st === STATE.ATTACK) showAlert("들켰다!", 2.2);
+      else if (st === STATE.INVESTIGATE) showAlert("무언가 소리를 들었다.", 2.6);
+      else if (st === STATE.LISTEN || st === STATE.SEARCH) showAlert("주변을 확인하는 소리가 들린다.", 2.6);
+      else if (prevSt === STATE.CHASE || prevSt === STATE.ATTACK) showAlert("찾지 못한 모양이다. 조용히 해라.", 2.6);
+    }
+    game.lastMonsterState = st;
 
     updateObjectives(dt);
+    tickAlert(dt);
 
     // 공포도
     const dist = Math.hypot(monster.x - player.x, monster.z - player.z);
@@ -729,12 +814,6 @@ function loop() {
     ui.setFear(fear);
     audio.setAmbientMood(fear);
     audio.heartbeat(fear, dt);
-
-    // 경고 배너
-    if (monster.state === STATE.CHASE && dist < 34) ui.setAlert("도망쳐 — 괴물가 온다");
-    else if (monster.state === STATE.INVESTIGATE && dist < 20) ui.setAlert("괴물가 소리 방향으로 접근한다");
-    else if (monster.state === STATE.SEARCH && dist < 14) ui.setAlert("괴물가 은신처를 뒤진다");
-    else ui.setAlert(null);
 
     // 괴물가 다가오면 조명이 '텔타'처럼 붉게 번져간다
     world.distress = (monster.state === STATE.CHASE || monster.state === STATE.ATTACK)
@@ -750,7 +829,7 @@ function loop() {
   } else {
     noise.update(dt);
     if (game.phase === "paused") {
-      ui.setAlert(null);
+      showAlert(null);
     }
   }
 

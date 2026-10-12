@@ -931,30 +931,30 @@ export class World {
 
   /* ---------- 서랍 / 잠긴 문 / 전리품 ---------- */
   _buildDoorsAndLoot() {
-    // 서랍 (뒤져서 열쇠/아이템 획득) — lootId는 Inventory ITEM id와 일치
-    // 1. 시작 대피소: 열쇠(확정 확보용)
-    this._drawer(2.6, 40.6, Math.PI, "key", "열쇠");
-    // 2~7. 시설 내부 (각 방)
+    // 서랍: lootId는 Inventory ITEM id와 일치. 열기/닫기/획득은 독립 상태.
+    // 1. 시작 대피소: 파란 창고 열쇠
+    this._drawer(2.6, 40.6, Math.PI, "key_shed", "창고 열쇠");
+    // 시설 내부 배터리/아이템
     this._drawer(-6, -42, Math.PI / 2, "battery", "예비 배터리");  // R1 창고
-    this._drawer(10, 6, Math.PI, "key", "열쇠");                   // R8 휴게실
+    this._drawer(10, 6, Math.PI, "key_store", "저장고 열쇠");      // R8 휴게실 — 빨간 열쇠
     this._drawer(38, -38, 0, "battery", "예비 배터리");            // R3 사무실
     this._drawer(-40, 8, 0, "battery", "예비 배터리");             // R7 숙소
     this._drawer(-8, -18, 0, "battery", "예비 배터리");            // R4 통신/서버실
     this._drawer(40, -16, 0, "battery", "예비 배터리");            // R6 저장고
-    this._drawer(-8, -16, 0, null, null);                          // R5 로비 — 비어 있는 서랍
+    this._drawer(-8, -16, 0, "note_shed", "찢긴 메모");            // R5 로비 — 단서
     this._drawer(36, 10, -Math.PI / 2, "battery", "예비 배터리");  // R9 잠긴 창고
 
-    // 8~12. 신규 아이템
+    // 신규 아이템 / 단서
     this._drawer(8, -42, 0, "smoke", "연막탄");                    // R2 기계실
     this._drawer(-6, -10, Math.PI / 2, "medkit", "구급상자");      // R5 로비
     this._drawer(-38, 6, 0, "decoy", "소음장치");                  // R7 숙소
     this._drawer(-8, -20, 0, "smoke", "연막탄");                   // R4 통신실
-    this._drawer(34, -36, 0, "medkit", "구급상자");                // R3 사무실
+    this._drawer(34, -36, 0, "note_power", "작업 일지");           // R3 사무실 — 목표 단서
+    this._drawer(30, 14, 0, "medkit", "구급상자");                 // R9 잠긴 창고 내부
 
-    // 잠긴 문: R9 창고 북쪽 입구(복도D 남벽 z=0). 열쇠 1개 필요.
-    this._lockedDoor(30, 0, "x", 4.0, "key", "창고 문");
-    // 잠긴 문: R6 저장고 남쪽 입구(복도D 남벽 z=-4). 별도 열쇠 1개 필요. 뒤에 차단기 있음.
-    this._lockedDoor(30, -4, "x", 3.5, "key", "저장고 문");
+    // 잠긴 문: 각각 고유 열쇠 필요 (범용 열쇠 아님)
+    this._lockedDoor(30, 0, "x", 4.0, "key_shed", "잠긴 창고 문");
+    this._lockedDoor(30, -4, "x", 3.5, "key_store", "잠긴 저장고 문");
   }
 
   _drawer(x, z, yaw, lootId, lootName) {
@@ -969,7 +969,12 @@ export class World {
     face.position.set(0, 0.76, 0.28);
     face.castShadow = true; face.userData.castShadow = true;
     g.add(face);
-    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.05, 0.05), this.metalMat);
+    // 열쇠가 든 서랍은 손잡이에 색상 표시
+    let handleColor = 0x59616c;
+    if (lootId === "key_shed") handleColor = 0x3a7bd5;
+    else if (lootId === "key_store") handleColor = 0xd53a3a;
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.05, 0.05),
+      new THREE.MeshStandardMaterial({ color: handleColor, roughness: 0.45, metalness: 0.65 }));
     handle.position.set(0, 0.76, 0.33);
     g.add(handle);
     g.position.set(x, y, z); g.rotation.y = yaw;
@@ -977,14 +982,44 @@ export class World {
 
     const box = { minX: x - 0.48, maxX: x + 0.48, minZ: z - 0.3, maxZ: z + 0.3 };
     this.boxes.push(box);
-    const rec = { x, z, yaw, group: g, face, box, lootId, lootName, searched: false, opened: false };
+    const rec = {
+      id: "drawer_" + this.drawers.length,
+      x, z, yaw, group: g, face, handle, box,
+      lootId, lootName,
+      opened: false,   // 논리적 열림 상태
+      anim: 0,         // 0 닫힘 → 1 열림 (애니메이션 진행도)
+      looted: false,   // 아이템 획득 여부 (opened와 독립)
+      busy: false      // 열기/닫기 애니메이션 중 상호작용 차단
+    };
     this.drawers.push(rec);
     return rec;
   }
 
-  openDrawer(d) {
-    if (!d || d.opened) return;
-    d.opened = true;
+  // 열기/닫기 전환. 애니메이션 중이면 무시.
+  toggleDrawer(d) {
+    if (!d || d.busy) return false;
+    d.opened = !d.opened;
+    d.busy = true;
+    return true;
+  }
+
+  // 애니메이션 진행 (world.update에서 호출)
+  _updateDrawers(dt) {
+    for (const dr of this.drawers) {
+      const target = dr.opened ? 1 : 0;
+      const speed = 6;
+      if (dr.anim < target) dr.anim = Math.min(target, dr.anim + dt * speed);
+      else if (dr.anim > target) dr.anim = Math.max(target, dr.anim - dt * speed);
+      else dr.busy = false;
+      dr.face.position.z = 0.28 + dr.anim * 0.16;
+    }
+  }
+
+  // 아이템 획득: 인벤토리 추가 성공 시에만 looted 처리
+  lootDrawer(d) {
+    if (!d || !d.opened || d.looted || !d.lootId) return false;
+    d.looted = true;
+    return true;
   }
 
   _lockedDoor(x, z, axis, width, keyId, label) {
@@ -1027,7 +1062,10 @@ export class World {
   // 새 게임을 시작할 때 퍼즐/전리품 상태를 초기화
   resetInteractive() {
     for (const d of this.drawers) {
-      d.searched = false; d.opened = false;
+      d.opened = false;
+      d.anim = 0;
+      d.looted = false;
+      d.busy = false;
       d.face.position.z = 0.28;
     }
     for (const door of this.lockedDoors) {
@@ -1185,12 +1223,8 @@ export class World {
     }
     const red = _RED;
     const dd = this.distress;
-    // 서랍 열림 애니메이션
-    for (let i = 0; i < this.drawers.length; i++) {
-      const dr = this.drawers[i];
-      const target = dr.opened ? 0.44 : 0.28;
-      dr.face.position.z += (target - dr.face.position.z) * Math.min(1, dt * 9);
-    }
+    // 서랍 열기/닫기 애니메이션
+    this._updateDrawers(dt);
     for (const l of this.lamps) {
       let distress = 0;
       if (dd) {
