@@ -413,6 +413,11 @@ function toggleMic() {
 let mapOn = false;
 function toggleMinimap() {
   if (game.phase !== "playing") return;
+  // 악몽 난이도: 미니맵 자체가 없다
+  if (settings.difficulty === "nightmare") {
+    ui.toast("악몽 난이도 — 지도는 쓸 수 없다", 2200);
+    return;
+  }
   mapOn = !mapOn;
   ui.toggleMinimap(mapOn);
   ui.toast(mapOn ? "지도 열기 (M으로 닫기)" : "지도 닫기", 1200);
