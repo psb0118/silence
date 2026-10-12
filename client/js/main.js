@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CONFIG, QUALITY } from "./config.js";
+import { CONFIG, QUALITY, DIFFICULTY } from "./config.js";
 import { clamp, damp, formatTime, rand } from "./util.js";
 import { World } from "./world.js";
 import { Player } from "./player.js";
@@ -10,9 +10,10 @@ import { UI } from "./ui.js";
 
 /* ================= 설정 ================= */
 const settings = Object.assign(
-  { sensitivity: 1, invertY: false, volume: 0.8, micSens: 1, quality: "low" },
+  { sensitivity: 1, invertY: false, volume: 0.8, micSens: 1, quality: "low", difficulty: "normal" },
   JSON.parse(localStorage.getItem("silence.settings") || "{}")
 );
+if (!DIFFICULTY[settings.difficulty]) settings.difficulty = "normal";
 function saveSettings() {
   localStorage.setItem("silence.settings", JSON.stringify(settings));
 }
@@ -94,6 +95,24 @@ const game = {
   lastMonsterState: STATE.ROAM
 };
 const FUSE_TOTAL = world.fuses.length;
+
+/* ================= 난이도 적용 ================= */
+const _CFG_BASE = {
+  monster: { ...CONFIG.monster },
+  stamina: { ...CONFIG.stamina },
+  battery: { ...CONFIG.battery },
+  assist: { ...CONFIG.assist }
+};
+
+function applyDifficulty(key) {
+  const d = DIFFICULTY[key] || DIFFICULTY.normal;
+  Object.assign(CONFIG.monster, _CFG_BASE.monster, d.monster || {});
+  Object.assign(CONFIG.stamina, _CFG_BASE.stamina, d.stamina || {});
+  Object.assign(CONFIG.battery, _CFG_BASE.battery, d.battery || {});
+  Object.assign(CONFIG.assist, _CFG_BASE.assist, d.assist || {});
+  player.setMaxHp(d.hpMax || 2);
+  return d;
+}
 
 /* ================= 입력 ================= */
 const input = { forward: false, back: false, left: false, right: false, sprint: false, crouch: false, jump: false };
@@ -185,6 +204,7 @@ startBtn.addEventListener("click", () => {
 });
 
 function startGame() {
+  applyDifficulty(settings.difficulty);
   game.phase = "playing";
   game.elapsed = 0;
   game.encounters = 0;
@@ -192,6 +212,7 @@ function startGame() {
   game.collected = 0;
   game.batteryWarned = false;
   game.ambientTimer = rand(CONFIG.assist.ambientScareMin, CONFIG.assist.ambientScareMax);
+  clearEffects();
   player.respawn();
   monster.reset();
   resetFuses();
@@ -211,8 +232,9 @@ function startGame() {
   mapOn = false;
   ui.toggleMinimap(false);
   ui.setFlashlight(true);
-  ui.setObjective("차단기 5개를 찾아 전원을 복구하세요", 0, FUSE_TOTAL, null);
-  ui.toast("괴물가 너의 숨을 느꼈다. 조용히 움직여라.", 3400);
+  ui.setHp(player.hp, player.maxHp);
+  ui.setObjective(`차단기 ${FUSE_TOTAL}개를 찾아 전원을 복구하세요`, 0, FUSE_TOTAL, null);
+  ui.toast(`[${DIFFICULTY[settings.difficulty]?.label || "보통"}] 괴물가 너의 숨을 느꼈다. 조용히 움직여라.`, 3400);
   if (noise.micEnabled) noise.attachMic();
   lockPointer();
 }
@@ -246,11 +268,38 @@ document.getElementById("btn-quit").addEventListener("click", () => {
   ui.hide(ui.pause);
   ui.setHudVisible(false);
   game.phase = "menu";
+  clearEffects();
   ui.show(ui.start);
 });
 
 function onCaught() {
   if (game.phase !== "playing") return;
+  // 무적 시간 중 재접촉 무시 (몬스터의 _caught 플래그도 되돌린다)
+  if (player.invuln > 0) {
+    monster._caught = false;
+    return;
+  }
+  const res = player.takeDamage(1);
+  if (!res.ok) { monster._caught = false; return; }
+
+  if (!res.dead) {
+    // 비치명 피격: 넉백 + 잠시 추적자와 분리
+    const dx = player.x - monster.x, dz = player.z - monster.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const kb = CONFIG.combat.knockback;
+    player.knockback((dx / len) * kb, (dz / len) * kb, CONFIG.combat.knockbackUp);
+    player.addCameraShake(0.9);
+    monster.forceRecover();
+    // 도망 기회를 주기 위해 즉시 추격을 유발하는 큰 소리는 내지 않는다
+    noise.addImpulse(0.35, player.x, player.z, "hurt");
+    audio.attackScreech();
+    ui.flashDamage();
+    ui.setHp(player.hp, player.maxHp);
+    ui.toast(`피격 — 남은 체력 ${player.hp}/${player.maxHp}`, 2400);
+    return;
+  }
+
+  // 사망
   game.phase = "scaring";
   game.scareTimer = 0;
   unlockPointer();
@@ -263,6 +312,7 @@ function onCaught() {
 function finishScare() {
   game.phase = "dead";
   ui.hideJumpscare();
+  clearEffects();
   document.getElementById("stat-time").textContent = formatTime(game.elapsed);
   document.getElementById("stat-fuse").textContent = `${game.collected}/${FUSE_TOTAL}`;
   ui.show(ui.death);
@@ -282,7 +332,7 @@ function winGame() {
   game.phase = "win";
   unlockPointer();
   document.getElementById("win-time").textContent = formatTime(game.elapsed);
-  document.getElementById("win-noise").textContent = noise.loudCount || noise._id || 0;
+  document.getElementById("win-noise").textContent = noise.loudCount || 0;
   ui.show(ui.win);
   ui.setHudVisible(false);
 }
@@ -400,7 +450,7 @@ function updateObjectives(dt) {
   if (game.exitPowered) {
     ui.setObjective("격리 철문으로 탈출하라", game.collected, FUSE_TOTAL, null);
   } else {
-    ui.setObjective("차단기 5개를 찾아 전원을 복구하세요", game.collected, FUSE_TOTAL, nearest ? nd : null);
+    ui.setObjective(`차단기 ${FUSE_TOTAL}개를 찾아 전원을 복구하세요`, game.collected, FUSE_TOTAL, nearest ? nd : null);
   }
 }
 
@@ -425,6 +475,68 @@ let eKeyDown = false;
 document.addEventListener("keydown", (e) => { if (e.code === "KeyE") eKeyDown = true; });
 document.addEventListener("keyup", (e) => { if (e.code === "KeyE") eKeyDown = false; });
 
+/* ================= 연막 / 소음장치 이펙트 ================= */
+const smokes = [];   // {x,z,r,ttl,maxTtl,mesh}
+const decoys = [];   // {x,z,ttl,interval,timer}
+world.smokes = smokes; // 괴물 시야 차단용 참조
+
+function clearEffects() {
+  for (const s of smokes) {
+    scene.remove(s.mesh);
+    s.mesh.geometry.dispose();
+    s.mesh.material.dispose();
+  }
+  smokes.length = 0;
+  decoys.length = 0;
+  world.smokes = smokes;
+}
+
+function spawnSmoke(x, z) {
+  const r = 4.6, maxTtl = 9;
+  const geo = new THREE.SphereGeometry(r, 14, 10);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xb8c4cc, transparent: true, opacity: 0.34, depthWrite: false
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  const y = world.heightAt(x, z) + 1.2;
+  mesh.position.set(x, y, z);
+  mesh.scale.set(1, 0.65, 1);
+  scene.add(mesh);
+  smokes.push({ x, z, r, ttl: maxTtl, maxTtl, mesh });
+}
+
+function spawnDecoy(x, z) {
+  decoys.push({ x, z, ttl: 6.5, interval: 0.45, timer: 0 });
+}
+
+function updateEffects(dt) {
+  for (let i = smokes.length - 1; i >= 0; i--) {
+    const s = smokes[i];
+    s.ttl -= dt;
+    const k = Math.max(0, s.ttl / s.maxTtl);
+    s.mesh.material.opacity = 0.34 * k;
+    const grow = 1 + (1 - k) * 0.45;
+    s.mesh.scale.set(grow, 0.65 * grow, grow);
+    if (s.ttl <= 0) {
+      scene.remove(s.mesh);
+      s.mesh.geometry.dispose();
+      s.mesh.material.dispose();
+      smokes.splice(i, 1);
+    }
+  }
+  for (let i = decoys.length - 1; i >= 0; i--) {
+    const d = decoys[i];
+    d.ttl -= dt;
+    d.timer -= dt;
+    if (d.timer <= 0) {
+      d.timer = d.interval;
+      noise.addImpulse(0.72, d.x, d.z, "decoy");
+      audio.blip(760 + Math.random() * 240, 0.07);
+    }
+    if (d.ttl <= 0) decoys.splice(i, 1);
+  }
+}
+
 /* ================= 인벤토리 사용 ================= */
 function useSlot(i) {
   const inv = player.inventory;
@@ -439,6 +551,29 @@ function useSlot(i) {
     ui.toast("배터리 보급 — 손전등 충전", 1600);
   } else if (slot.id === "key") {
     ui.toast("열쇠는 잠긴 문 앞에서 자동으로 사용됩니다", 2000);
+  } else if (slot.id === "medkit") {
+    if (player.hp >= player.maxHp) { ui.toast("체력이 이미 가득 찼습니다", 1600); return; }
+    player.hp = Math.min(player.maxHp, player.hp + 1);
+    inv.takeAt(i);
+    audio.blip(980, 0.16);
+    ui.setHp(player.hp, player.maxHp);
+    ui.toast(`구급상자 사용 — 체력 ${player.hp}/${player.maxHp}`, 1800);
+  } else if (slot.id === "smoke") {
+    const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
+    const x = player.x + fx * 2.6, z = player.z + fz * 2.6;
+    spawnSmoke(x, z);
+    inv.takeAt(i);
+    noise.addImpulse(0.45, x, z, "smoke");
+    audio.blip(420, 0.18);
+    ui.toast("연막 터짐 — 괴물의 시야를 가렸다", 2000);
+  } else if (slot.id === "decoy") {
+    const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
+    const x = player.x + fx * 4.5, z = player.z + fz * 4.5;
+    spawnDecoy(x, z);
+    inv.takeAt(i);
+    noise.addImpulse(0.6, x, z, "throw");
+    audio.blip(660, 0.12);
+    ui.toast("소음장치 가동 — 괴물을 다른 곳으로 유인한다", 2200);
   } else {
     return;
   }
@@ -566,6 +701,7 @@ function loop() {
     input.jump = false; // 점프는 1프레임 펄스
     noise.update(dt);
     monster.update(dt, player);
+    updateEffects(dt);
 
     // 충전소 배터리 (안전지대에서만)
     const cs = world.chargeStation;
@@ -614,7 +750,6 @@ function loop() {
   } else {
     noise.update(dt);
     if (game.phase === "paused") {
-      const d = Math.hypot(monster.x - player.x, monster.z - player.z);
       ui.setAlert(null);
     }
   }
@@ -642,6 +777,7 @@ function loop() {
     ui.setNoise(noise.level);
     ui.setStamina(player.stamina / CONFIG.stamina.max);
     ui.setBattery(player.battery / CONFIG.battery.max);
+    ui.setHp(player.hp, player.maxHp);
     ui.setSafeZone(player.inSafeZone, player.charging);
     ui.setMic(noise.micState);
   }
@@ -688,6 +824,7 @@ const setVolVal = document.getElementById("set-vol-val");
 const setMicSens = document.getElementById("set-micsens");
 const setMicSensVal = document.getElementById("set-micsens-val");
 const setQuality = document.getElementById("set-quality");
+const setDifficulty = document.getElementById("set-difficulty");
 
 function syncSettingsUI() {
   setSens.value = settings.sensitivity;
@@ -698,6 +835,7 @@ function syncSettingsUI() {
   setMicSens.value = settings.micSens;
   setMicSensVal.textContent = settings.micSens.toFixed(1) + "x";
   setQuality.value = settings.quality;
+  if (setDifficulty) setDifficulty.value = settings.difficulty;
 }
 syncSettingsUI();
 
@@ -710,6 +848,13 @@ setQuality.addEventListener("change", () => {
   saveSettings();
   ui.toast("화질은 다음 시작 시 적용됩니다", 2400);
 });
+if (setDifficulty) {
+  setDifficulty.addEventListener("change", () => {
+    settings.difficulty = setDifficulty.value;
+    saveSettings();
+    ui.toast("난이도는 다음 시작 시 적용됩니다", 2400);
+  });
+}
 
 // 초기 상태
 ui.setMic("off");
@@ -717,6 +862,6 @@ ui.setFlashlight(true);
 ui.setHudVisible(false);
 
 // 디버그/테스트용 훅
-window.__silence = { game, player, monster, noise, world, ui, settings, STATE, input, audio, renderer, camera, scene, THREE };
+window.__silence = { game, player, monster, noise, world, ui, settings, STATE, input, audio, renderer, camera, scene, THREE, DIFFICULTY, applyDifficulty, smokes, decoys };
 
 loop();

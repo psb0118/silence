@@ -94,7 +94,22 @@ export const CONFIG = {
     inspectTime: 2.2,      // 은신처 조사 시간
 
     stuckTime: 1.1,
-    repathInterval: 0.30
+    repathInterval: 0.30,
+
+    // 즉시 추격 임계 (난이도별 조절 가능)
+    loudIntensity: 0.6,
+    loudScore: 0.30,
+    loudDist: 8,
+    // 은신처 발견/조사 확률
+    inspectFindChance: 0.55,
+    hideInspectChance: 0.45
+  },
+
+  // 전투/피격
+  combat: {
+    invulnTime: 2.2,     // 피격 후 무적 시간
+    knockback: 8.5,      // 피격 시 넉백 속도
+    knockbackUp: 3.2
   },
 
   interaction: {
@@ -123,4 +138,71 @@ export const QUALITY = {
   low:    { grass: 6000,  pixelRatio: 1.0, shadows: false, grassRadius: 42 },
   medium: { grass: 12000, pixelRatio: 1.0, shadows: true,  grassRadius: 50 },
   high:   { grass: 20000, pixelRatio: 1.5, shadows: true,  grassRadius: 58 }
+};
+
+// 난이도 프리셋 — startGame()에서 CONFIG.monster/stamina/battery/assist 를 덮어쓴다.
+// 표기되지 않은 값은 config 기본값(=normal 체감)을 유지한다.
+export const DIFFICULTY = {
+  easy: {
+    label: "쉬움",
+    hpMax: 3,
+    monster: {
+      chaseSpeed: 5.0,
+      investigateSpeed: 3.8,
+      stalkSpeed: 2.5,
+      searchSpeed: 2.3,
+      sightBase: 11,
+      sightChase: 14,
+      hearBase: 20,
+      senseRadius: 2.6,
+      loseTime: 2.6,
+      suspicionTime: 8,
+      searchTime: 9,
+      searchRadius: 14,
+      attackWindup: 0.65,
+      loudIntensity: 0.72,
+      loudScore: 0.42,
+      loudDist: 5.5,
+      inspectFindChance: 0.35,
+      hideInspectChance: 0.30
+    },
+    stamina: { drain: 0.8, regen: 1.0 },
+    battery: { drain: 1.1 },
+    assist: { ambientScareMin: 30, ambientScareMax: 70 }
+  },
+  normal: {
+    label: "보통",
+    hpMax: 2,
+    monster: {},
+    stamina: {},
+    battery: {},
+    assist: {}
+  },
+  hard: {
+    label: "어려움",
+    hpMax: 1,
+    monster: {
+      chaseSpeed: 6.5,
+      investigateSpeed: 5.2,
+      stalkSpeed: 3.6,
+      searchSpeed: 3.2,
+      sightBase: 18,
+      sightChase: 23,
+      hearBase: 34,
+      senseRadius: 4.2,
+      loseTime: 5.0,
+      suspicionTime: 16,
+      searchTime: 16,
+      searchRadius: 22,
+      attackWindup: 0.4,
+      loudIntensity: 0.5,
+      loudScore: 0.22,
+      loudDist: 10,
+      inspectFindChance: 0.75,
+      hideInspectChance: 0.60
+    },
+    stamina: { drain: 1.2, regen: 0.65 },
+    battery: { drain: 1.9 },
+    assist: { ambientScareMin: 18, ambientScareMax: 40 }
+  }
 };

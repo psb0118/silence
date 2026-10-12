@@ -35,6 +35,7 @@ export class World {
     this.walls = [];  // 미니맵용 벽 선분
     this.rooms = [];  // 미니맵용 방 목록
     this.mists = [];
+    this.smokes = []; // 연막탄 구름 {x,z,r,ttl,...} — 괴물 시야 차단용
     this.time = 0;
     this.distress = null;   // 괴물의 위치 (조명 붉은 스트로브 연출용)
 
@@ -909,7 +910,9 @@ export class World {
       { x: 0, z: -34 },     // R2 기계실
       { x: 40, z: -42 },    // R3 사무실
       { x: -40, z: 12 },    // R7 숙소
-      { x: 40, z: 12 }      // R9 잠긴 창고
+      { x: 40, z: 12 },     // R9 잠긴 창고
+      { x: -36, z: -18 },   // R4 통신실
+      { x: 36, z: -18 }     // R6 저장고 (잠긴 문 뒤)
     ];
     const mat = new THREE.MeshStandardMaterial({ color: 0x7fe6c8, emissive: 0x2fd0a0, emissiveIntensity: 1.6, roughness: 0.4, metalness: 0.3 });
     for (const s of spots) {
@@ -928,7 +931,7 @@ export class World {
 
   /* ---------- 서랍 / 잠긴 문 / 전리품 ---------- */
   _buildDoorsAndLoot() {
-    // 서랍 (뒤져서 열쇠/배터리 획득) — lootId는 Inventory ITEM id와 일치
+    // 서랍 (뒤져서 열쇠/아이템 획득) — lootId는 Inventory ITEM id와 일치
     // 1. 시작 대피소: 열쇠(확정 확보용)
     this._drawer(2.6, 40.6, Math.PI, "key", "열쇠");
     // 2~7. 시설 내부 (각 방)
@@ -941,8 +944,17 @@ export class World {
     this._drawer(-8, -16, 0, null, null);                          // R5 로비 — 비어 있는 서랍
     this._drawer(36, 10, -Math.PI / 2, "battery", "예비 배터리");  // R9 잠긴 창고
 
+    // 8~12. 신규 아이템
+    this._drawer(8, -42, 0, "smoke", "연막탄");                    // R2 기계실
+    this._drawer(-6, -10, Math.PI / 2, "medkit", "구급상자");      // R5 로비
+    this._drawer(-38, 6, 0, "decoy", "소음장치");                  // R7 숙소
+    this._drawer(-8, -20, 0, "smoke", "연막탄");                   // R4 통신실
+    this._drawer(34, -36, 0, "medkit", "구급상자");                // R3 사무실
+
     // 잠긴 문: R9 창고 북쪽 입구(복도D 남벽 z=0). 열쇠 1개 필요.
     this._lockedDoor(30, 0, "x", 4.0, "key", "창고 문");
+    // 잠긴 문: R6 저장고 남쪽 입구(복도D 남벽 z=-4). 별도 열쇠 1개 필요. 뒤에 차단기 있음.
+    this._lockedDoor(30, -4, "x", 3.5, "key", "저장고 문");
   }
 
   _drawer(x, z, yaw, lootId, lootName) {
@@ -1080,6 +1092,14 @@ export class World {
       this.exitIndicatorMat.color.setHex(0xff5555);
       this.exitIndicatorMat.emissive.setHex(0x661111);
       this.exitIndicatorMat.emissiveIntensity = 1.2;
+      // 게이트 닫기 복원 (이전에는 open 상태가 유지되어 재시작 시 문이 열려 있었음)
+      if (this.gate && this.gate.open) {
+        this.gate.open = false;
+        this.gate.door.visible = true;
+        if (this._gateDoorBox && !this.boxes.includes(this._gateDoorBox)) {
+          this.boxes.push(this._gateDoorBox);
+        }
+      }
     }
   }
 

@@ -150,6 +150,24 @@ html, body {
   transition: width .1s linear, background .2s;
 }
 
+/* 체력 */
+#hp-wrap {
+  position: absolute; left: 50%; top: 78%;
+  width: min(240px, 36vw); transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px;
+  opacity: .85;
+}
+#hp-bar {
+  flex: 1; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.07);
+  overflow: hidden;
+}
+#hp-fill {
+  height: 100%; width: 100%; border-radius: 3px;
+  background: linear-gradient(90deg, #8a3a50, #e06080);
+  transition: width .1s linear, background .2s;
+}
+#hp-text { color: #c9a0a8; margin-left: 4px; font-variant-numeric: tabular-nums; }
+
 /* 목표 */
 #objective {
   position: absolute; left: 20px; top: 18px;
@@ -269,6 +287,15 @@ html, body {
 .rules b { color: #f0b56a; }
 
 .mic-row { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 12px; color: #9fb0bf; margin: 8px 0 18px; }
+
+.diff-row {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  font-size: 12px; color: #9fb0bf; margin: 4px 0 12px;
+}
+.diff-row select {
+  background: #141a22; color: #cfd6df; border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 8px; padding: 7px 10px; font-size: 12px; min-width: 200px;
+}
 
 .big-btn {
   pointer-events: auto;

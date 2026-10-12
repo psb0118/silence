@@ -49,6 +49,7 @@ export class Monster {
     // 공격
     this._attackPhase = 0;
     this._caught = false;
+    this._grace = 0;
     this.attackAnim = 0;
 
     // 사운드 타이머
@@ -283,7 +284,34 @@ export class Monster {
     const nx = (player.x - this.x) / (d || 1), nz = (player.z - this.z) / (d || 1);
     const facing = fx * nx + fz * nz;
     if (d > 3 && facing < CONFIG.monster.sightFov) return false;
+    if (this._smokeBlocks(this.x, this.z, player.x, player.z)) return false;
     return !this.world.lineBlocked(this.x, this.z, player.x, player.z);
+  }
+
+  // 시선(괴물↔플레이어)이 연막 구름을 관통하면 시야 차단
+  _smokeBlocks(x0, z0, x1, z1) {
+    const smokes = this.world.smokes;
+    if (!smokes || !smokes.length) return false;
+    const dx = x1 - x0, dz = z1 - z0;
+    const len2 = dx * dx + dz * dz || 1;
+    for (const s of smokes) {
+      let t = ((s.x - x0) * dx + (s.z - z0) * dz) / len2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const px = x0 + dx * t, pz = z0 + dz * t;
+      const dist = Math.hypot(s.x - px, s.z - pz);
+      if (dist < s.r) return true;
+    }
+    return false;
+  }
+
+  // 비치명 피격 후: 추적자를 수색으로 돌려 플레이어가 도망칠 시간을 준다
+  forceRecover() {
+    this._caught = false;
+    this._attackPhase = 0;
+    this.lostTimer = 0;
+    this.suspicion = Math.min(this.suspicion, 0.6);
+    this._grace = 2.4; // 이 시간 동안은 목격/소음으로도 즉시 추격하지 않음
+    this._setState(STATE.RECOVER);
   }
 
   _consumeNoise() {
@@ -320,8 +348,14 @@ export class Monster {
 
     const st = this.state;
     if (st === STATE.CHASE || st === STATE.ATTACK) return;
+    // 피격 직후 유예 시간: 즉시 추격하지 않고 수색으로 전환
+    if (this._grace > 0) {
+      if (st !== STATE.SEARCH) this._setState(STATE.SEARCH);
+      this._searchTarget = { x: best.e.x, z: best.e.z };
+      return;
+    }
     // 크고 가까운 소리(걷기 포함) → 즉시 추격. 소리를 좇아 끝까지 쫓아온다.
-    const loud = best.e.intensity >= 0.6 || best.score > 0.30 || best.d < 8;
+    const loud = best.e.intensity >= cfg.loudIntensity || best.score > cfg.loudScore || best.d < cfg.loudDist;
     if (loud) {
       this._setState(STATE.CHASE);
     } else if (st === STATE.SEARCH) {
@@ -350,6 +384,7 @@ export class Monster {
     const cfg = CONFIG.monster;
     this._repathTimer -= dt;
     this.stateTime += dt;
+    if (this._grace > 0) this._grace -= dt;
     this.suspicion = clamp(this.suspicion - dt / cfg.suspicionTime, 0, 1.6);
 
     // 플레이어 은신 진입 목격 판정
@@ -373,7 +408,9 @@ export class Monster {
       this.lastKnownTime = this.time;
       this.lostTimer = 0;
       this.suspicion = 1.4;
-      if (this.state !== STATE.CHASE && this.state !== STATE.ATTACK) this._setState(STATE.CHASE);
+      if (this._grace > 0) {
+        if (this.state !== STATE.SEARCH) this._setState(STATE.SEARCH);
+      } else if (this.state !== STATE.CHASE && this.state !== STATE.ATTACK) this._setState(STATE.CHASE);
     }
 
     let speed = cfg.roamSpeed;
@@ -528,7 +565,7 @@ export class Monster {
     this._inspectTimer = 0;
     const occupied = player.hidden && player.hideSpot === spot;
     const witnessed = this.seenHide && this.seenHide.spot === spot;
-    if (occupied && (witnessed || this.suspicion > 0.5 || Math.random() < 0.55)) {
+    if (occupied && (witnessed || this.suspicion > 0.5 || Math.random() < cfg.inspectFindChance)) {
       // 발견 → 공격
       this.lastKnown = { x: spot.x, z: spot.z };
       this._setState(STATE.ATTACK);
@@ -571,7 +608,7 @@ export class Monster {
     } else {
       this.moveSpeedActual = 0;
     }
-    if (!playerSafe && !this._caught && d < cfg.catchRadius && this._attackPhase > cfg.attackWindup && this.onCatch) {
+    if (!playerSafe && !player.hidden && !this._caught && d < cfg.catchRadius && this._attackPhase > cfg.attackWindup && this.onCatch) {
       this._caught = true;
       this.onCatch();
     }
@@ -622,7 +659,7 @@ export class Monster {
   _pickSearchTarget() {
     const cfg = CONFIG.monster;
     // 가끔 은신처를 조사
-    if (Math.random() < 0.45 && this.world.hidingSpots.length) {
+    if (Math.random() < cfg.hideInspectChance && this.world.hidingSpots.length) {
       const near = this.world.hidingSpots
         .map((s) => ({ s, d: dist2(s.x, s.z, this.lastKnown.x, this.lastKnown.z) }))
         .sort((a, b) => a.d - b.d)
@@ -916,6 +953,7 @@ export class Monster {
     this._caught = false;
     this._boundaryTarget = null;
     this._wasHidden = false;
+    this._grace = 0;
     this.chasing = false;
     this.attackAnim = 0;
     this._lastStep = -1;

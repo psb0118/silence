@@ -8,6 +8,8 @@ export class UI {
     this.noiseWrap = $("#noise-wrap");
     this.staminaFill = $("#stamina-fill");
     this.batteryFill = $("#battery-fill");
+    this.hpFill = $("#hp-fill");
+    this.hpText = $("#hp-text");
     this.safeZoneChip = $("#safezone-status");
     this.safeZoneText = $("#safezone-text");
     this.objMain = $("#obj-main");
@@ -88,6 +90,16 @@ export class UI {
       : ratio < 0.5
         ? "linear-gradient(90deg,#8a7a3a,#f5d76e)"
         : "linear-gradient(90deg,#8a7a3a,#f5e06e)";
+  }
+
+  setHp(hp, maxHp) {
+    if (!this.hpFill) return;
+    const ratio = Math.max(0, Math.min(1, maxHp ? hp / maxHp : 0));
+    this.hpFill.style.width = Math.round(ratio * 100) + "%";
+    this.hpFill.style.background = hp <= 1
+      ? "linear-gradient(90deg,#7a2a2a,#e04040)"
+      : "linear-gradient(90deg,#8a3a50,#e06080)";
+    if (this.hpText) this.hpText.textContent = `${hp}/${maxHp}`;
   }
 
   setSafeZone(inSafe, charging) {

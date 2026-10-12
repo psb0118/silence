@@ -34,6 +34,10 @@ export class Player {
     this.battery = CONFIG.battery.max;
     this.charging = false;
 
+    this.maxHp = 2;
+    this.hp = 2;
+    this.invuln = 0;
+
     this.hidden = false;
     this.hideSpot = null;
     this._enterHideT = 0;
@@ -152,6 +156,7 @@ export class Player {
   update(dt, input) {
     const w = this.world;
     this.updateBattery(dt);
+    if (this.invuln > 0) this.invuln = Math.max(0, this.invuln - dt);
 
     if (this.hidden) { this._updateHidden(dt); return; }
 
@@ -373,6 +378,29 @@ export class Player {
 
   addCameraShake(v) { this._cameraShake = Math.max(this._cameraShake, v); }
 
+  /* ---------- 피격 / 넉백 ---------- */
+  setMaxHp(max) {
+    this.maxHp = max;
+    this.hp = max;
+    this.invuln = 0;
+  }
+
+  // 넉백 방향·세기는 메인에서 계산해 넣는다 (vx/vz는 이미 충돌 해결된 상태)
+  knockback(vx, vz, up = 0) {
+    this.vx = vx; this.vz = vz; this.vy = Math.max(this.vy, up);
+    this.onGround = false;
+    this.wasAirborne = true;
+  }
+
+  takeDamage(amount = 1) {
+    if (this.invuln > 0) return { ok: false, reason: "invuln" };
+    this.hp = Math.max(0, this.hp - amount);
+    this.invuln = CONFIG.combat.invulnTime;
+    return { ok: true, hp: this.hp, dead: this.hp <= 0 };
+  }
+
+  get hpLow() { return this.hp <= 1; }
+
   respawn() {
     this.x = this.world.spawn.x;
     this.z = this.world.spawn.z;
@@ -387,6 +415,8 @@ export class Player {
     this.stamina = CONFIG.stamina.max;
     this.battery = CONFIG.battery.max;
     this.charging = false;
+    this.hp = this.maxHp;
+    this.invuln = 0;
     this.flashOn = true;
     this._flashTarget = 380.0;
     this.lens.material.color.setHex(0xfff2c4);

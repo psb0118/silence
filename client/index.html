@@ -59,10 +59,16 @@
       <div id="battery-bar"><div id="battery-fill"></div></div>
     </div>
 
+    <!-- 체력 -->
+    <div id="hp-wrap">
+      <div class="stamina-icon">HP <span id="hp-text">2/2</span></div>
+      <div id="hp-bar"><div id="hp-fill"></div></div>
+    </div>
+
     <!-- 목표 / 상태 -->
     <div id="objective">
       <div id="obj-main">차단기를 찾아 전원을 복구하세요</div>
-      <div id="obj-sub">차단기 <b><span id="fuse-count">0</span>/<span id="fuse-total">5</span></b> · 가장 가까운 차단기 <b><span id="fuse-dist">--</span>m</b></div>
+      <div id="obj-sub">차단기 <b><span id="fuse-count">0</span>/<span id="fuse-total">7</span></b> · 가장 가까운 차단기 <b><span id="fuse-dist">--</span>m</b></div>
     </div>
 
     <!-- 미니맵 (M 키) -->
@@ -120,17 +126,27 @@
         <div class="col">
           <h3>생존</h3>
           <ul class="rules">
-            <li>이름 없는 시설에 갇혔다. <b>차단기 5개</b>를 재기동해 격리구역 <b>출입 철문</b>의 전원을 복구하고 탈출하라.</li>
+            <li>이름 없는 시설에 갇혔다. <b>차단기 7개</b>를 재기동해 격리구역 <b>출입 철문</b>의 전원을 복구하고 탈출하라.</li>
             <li>손전등이 없으면 <b>거의 아무것도 보이지 않는다</b>. 꺼져 있다면 먼저 켜라.</li>
             <li>괴물은 <b>소리</b>와 <b>시야</b>로 너를 추적한다. 뛰거나 점프하면 멀리서도 들리고, 소리를 내는 한 멈추지 않는다.</li>
             <li>그것은 <b>숨은 너를 보지 못한다</b>. 들킬 듯하면 사물함·책상 밑 등 <b>은신처</b>에 숨어라. 나올 땐 <b>E</b>.</li>
+            <li>잡혀도 즉사하지 않는다. <b>체력(HP)</b>이 남아 있으면 넉백 후 도망칠 기회가 주어진다. HP가 0이면 그 자리에서 끝이다.</li>
+            <li>서랍에서 <b>구급상자</b>(HP 회복), <b>연막탄</b>(시야 차단), <b>소음장치</b>(괴물 유인)를 얻을 수 있다. <b>1–9</b> 키로 사용.</li>
             <li>손전등에는 <b>배터리</b>가 있다. 남쪽 대피소(<b>안전지대</b>)의 충전소에서 보급하라.</li>
-            <li>시설의 <b>서랍</b>을 열어 <b>열쇠</b>와 <b>배터리</b>를 챙겨라(열기 → <b>E</b>로 줍기). 잠긴 <b>창고 문</b>은 열쇠가 있어야 열 수 있다.</li>
-            <li><b>1–9</b> 키로 인벤토리 슬롯을 사용한다 (배터리 보급 · 열쇠는 문 앞에서 자동 사용). 슬롯이 가득 차면 더는 줍지 못한다. <b>M</b> 키로 지도를 켠다.</li>
+            <li>시설의 <b>서랍</b>을 열어 <b>열쇠</b>와 아이템을 챙겨라(열기 → <b>E</b>로 줍기). 잠긴 <b>창고·저장고 문</b>은 열쇠가 있어야 열 수 있다.</li>
             <li>안전지대 안에서는 괴물조차 너에게 손댈 수 없다.</li>
             <li>마이크(<b>V</b>)를 켜면 네 <b>실제 목소리</b>마저 사냥감이 된다.</li>
           </ul>
         </div>
+      </div>
+
+      <div class="diff-row">
+        <span>난이도</span>
+        <select id="set-difficulty">
+          <option value="easy">쉬움 — HP 3, 느린 추적</option>
+          <option value="normal" selected>보통 — HP 2</option>
+          <option value="hard">어려움 — HP 1, 잔혹한 추적</option>
+        </select>
       </div>
 
       <div class="mic-row">
