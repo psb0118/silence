@@ -320,8 +320,9 @@ export class Monster {
 
   // 거리 기반 청취: 세기가 클수록 멀리서 들리고, 가까울수록 작은 소리에도 반응한다.
   // 안전 구역에서 발생한 소음은 감지 대상에서 제외한다.
-  _consumeNoise() {
-    const evs = this.noise.drainEvents();
+  // shared: 괴물 2마리가 같은 소음 이벤트를 함께 받도록 사전에 drain된 배열
+  _consumeNoise(shared = null) {
+    const evs = shared || this.noise.drainEvents();
     const cfg = CONFIG.monster;
     let best = null, bestScore = 0;
     for (let i = 0; i < evs.length; i++) {
@@ -402,7 +403,7 @@ export class Monster {
   }
 
   /* ================= 업데이트 ================= */
-  update(dt, player) {
+  update(dt, player, sharedEvents = null) {
     this.time += dt;
     this._playerRef = player;
     const cfg = CONFIG.monster;
@@ -445,7 +446,7 @@ export class Monster {
       this._setState(STATE.SEARCH);
     }
 
-    const hearBest = playerSafe ? null : this._consumeNoise();
+    const hearBest = playerSafe ? null : this._consumeNoise(sharedEvents);
     const sees = playerSafe ? false : this._seen(player);
     const dToPlayer = Math.hypot(player.x - this.x, player.z - this.z);
     const veryClose = !player.hidden && !playerSafe && dToPlayer < cfg.senseRadius;
@@ -990,8 +991,9 @@ export class Monster {
     return path;
   }
 
-  reset() {
-    this.x = 0; this.z = -2;
+  reset(spawn = null) {
+    this.x = spawn ? spawn.x : 0;
+    this.z = spawn ? spawn.z : -2;
     this.y = this.world.heightAt(this.x, this.z);
     this.yaw = 0;
     this.state = STATE.ROAM;

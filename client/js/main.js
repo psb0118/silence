@@ -76,6 +76,9 @@ const noise = new NoiseSystem(audio);
 const player = new Player(camera, world, noise, audio, settings);
 const monster = new Monster(scene, world, audio, noise);
 monster.onCatch = onCaught;
+// 악몽 난이도 전용: 두 번째 괴물
+let monster2 = null;
+let monster2Active = false;
 const ui = new UI();
 ui.attach(world, player, monster);
 
@@ -256,6 +259,17 @@ function startGame() {
   clearEffects();
   player.respawn();
   monster.reset();
+  // 악몽: 두 번째 괴물 (남서 구석에서 시작 — 괴물1·플레이어와 분리)
+  monster2Active = settings.difficulty === "nightmare";
+  if (monster2Active) {
+    if (!monster2) {
+      monster2 = new Monster(scene, world, audio, noise);
+      monster2.onCatch = () => onCaught(monster2);
+    }
+    monster2.reset({ x: -46, z: -40 });
+    monster2.rebuildGrid();
+  }
+  if (monster2) monster2.group.visible = monster2Active;
   resetFuses();
   player.inventory.clear();
   world.resetInteractive();
@@ -338,24 +352,25 @@ document.getElementById("btn-quit").addEventListener("click", () => {
   ui.show(ui.start);
 });
 
-function onCaught() {
+function onCaught(m) {
+  m = m || monster;
   if (game.phase !== "playing") return;
   // 무적 시간 중 재접촉 무시 (몬스터의 _caught 플래그도 되돌린다)
   if (player.invuln > 0) {
-    monster._caught = false;
+    m._caught = false;
     return;
   }
   const res = player.takeDamage(1);
-  if (!res.ok) { monster._caught = false; return; }
+  if (!res.ok) { m._caught = false; return; }
 
   if (!res.dead) {
     // 비치명 피격: 넉백 + 잠시 추적자와 분리
-    const dx = player.x - monster.x, dz = player.z - monster.z;
+    const dx = player.x - m.x, dz = player.z - m.z;
     const len = Math.hypot(dx, dz) || 1;
     const kb = CONFIG.combat.knockback;
     player.knockback((dx / len) * kb, (dz / len) * kb, CONFIG.combat.knockbackUp);
     player.addCameraShake(0.9);
-    monster.forceRecover();
+    m.forceRecover();
     // 도망 기회를 주기 위해 즉시 추격을 유발하는 큰 소리는 내지 않는다
     noise.addImpulse(0.35, player.x, player.z, "hurt");
     audio.attackScreech();
@@ -658,6 +673,7 @@ function tryOpenDoor(door) {
   // 열쇠는 소모하지 않음 — 문 개방만
   world.openLockedDoor(door);
   monster.rebuildGrid();
+  if (monster2) monster2.rebuildGrid();
   noise.addImpulse(0.9, player.x, player.z, "door");
   ui.setInventory(player.inventory);
   ui.toast(`${door.label} 잠금 해제`, 2000);
@@ -882,6 +898,21 @@ function makeShadowFigure() {
 const clock = new THREE.Clock();
 let fpsAcc = 0, fpsTimer = 0;
 
+/* 두 괴물 중 '더 위험한 쪽' 기준으로 경고/공포도를 계산한다 (악몽 전용) */
+const ST_RANK = { ROAM: 0, LISTEN: 1, RECOVER: 1, STALK: 1, INVESTIGATE: 2, SEARCH: 2, CHASE: 3, ATTACK: 4 };
+function threatState() {
+  if (!monster2Active || !monster2) return monster.state;
+  return (ST_RANK[monster2.state] || 0) > (ST_RANK[monster.state] || 0) ? monster2.state : monster.state;
+}
+function threatDist(px, pz) {
+  let d = Math.hypot(monster.x - px, monster.z - pz);
+  if (monster2Active && monster2) d = Math.min(d, Math.hypot(monster2.x - px, monster2.z - pz));
+  return d;
+}
+function activeMonsters() {
+  return monster2Active && monster2 ? [monster, monster2] : [monster];
+}
+
 function loop() {
   requestAnimationFrame(loop);
   const dt = Math.min(clock.getDelta(), 0.05);
@@ -892,7 +923,14 @@ function loop() {
     player.update(dt, input);
     input.jump = false; // 점프는 1프레임 펄스
     noise.update(dt);
-    monster.update(dt, player);
+    if (monster2Active && monster2) {
+      // 소음 이벤트를 두 괴물이 공유한다 (각자 drain하면 한쪽만 듣는다)
+      const evs = noise.drainEvents();
+      monster.update(dt, player, evs);
+      monster2.update(dt, player, evs);
+    } else {
+      monster.update(dt, player);
+    }
     updateEffects(dt);
 
     // 충전소 배터리 (안전지대에서만 · 악몽에서는 충전소 자체가 없다)
@@ -911,7 +949,7 @@ function loop() {
 
     // 몬스터 조우 카운터 + 상태 전이 시에만 경고 문구 갱신
     const prevSt = game.lastMonsterState;
-    const st = monster.state;
+    const st = threatState();
     if (st === STATE.CHASE && prevSt !== STATE.CHASE) game.encounters++;
     if (st !== prevSt) {
       if (st === STATE.CHASE) showAlert("괴물이 온다!", 3.0);
@@ -925,19 +963,21 @@ function loop() {
     updateObjectives(dt);
     tickAlert(dt);
 
-    // 공포도
-    const dist = Math.hypot(monster.x - player.x, monster.z - player.z);
+    // 공포도 (가장 가까운 괴물 기준)
+    const dist = threatDist(player.x, player.z);
     const proximity = clamp(1 - dist / 26, 0, 1);
-    const fearTarget = clamp(Math.max(proximity, noise.level * 0.5, monster.state === STATE.CHASE ? 0.7 : 0), 0, 1);
+    const fearTarget = clamp(Math.max(proximity, noise.level * 0.5,
+      st === STATE.CHASE || st === STATE.ATTACK ? 0.7 : 0), 0, 1);
     fear = damp(fear, fearTarget, 2.2, dt);
     ui.setFear(fear);
     audio.setAmbientMood(fear);
     audio.heartbeat(fear, dt);
 
-    // 괴물이 다가오면 조명이 '텔타'처럼 붉게 번져간다
-    world.distress = (monster.state === STATE.CHASE || monster.state === STATE.ATTACK)
-      ? { x: monster.x, z: monster.z }
-      : null;
+    // 괴물이 다가오면 조명이 '텔타'처럼 붉게 번져간다 (악몽: 추적 중인 괴물 우선)
+    const chasers = activeMonsters();
+    const threat = chasers.find((m) => m.state === STATE.ATTACK)
+      || chasers.find((m) => m.state === STATE.CHASE);
+    world.distress = threat ? { x: threat.x, z: threat.z } : null;
 
     // 환경 공포
     game.ambientTimer -= dt;
@@ -1062,6 +1102,6 @@ ui.setFlashlight(true);
 ui.setHudVisible(false);
 
 // 디버그/테스트용 훅
-window.__silence = { game, player, monster, noise, world, ui, settings, STATE, input, audio, renderer, camera, scene, THREE, DIFFICULTY, applyDifficulty, smokes, decoys };
+window.__silence = { game, player, monster, get monster2() { return monster2; }, get monster2Active() { return monster2Active; }, startGame, noise, world, ui, settings, STATE, input, audio, renderer, camera, scene, THREE, DIFFICULTY, applyDifficulty, smokes, decoys };
 
 loop();
