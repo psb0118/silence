@@ -99,6 +99,9 @@ export const CONFIG = {
     roamMin: 6,           // 배회 목표 최소 거리 (활동 반경 하단)
     roamMax: 54,          // 배회 목표 최대 거리 (활동 반경 상단)
 
+    blind: false,         // 악몽: 시각 인식 완전 차단 — 오직 소리로만 추적
+    hideKnownChance: null, // 악몽: 들켜도 숨은 뒤 추적당할 확률 (null = 항상 추적)
+
     // "들킨 상태" 판정 — 직전 목격/소음 인지가 이 시간 이내이고(가장 최근 인지 지점이
     // 은신처와 가까우면) 은신해도 포기하지 않고 은신처를 뒤져 끝내 찾아낸다.
     hideKnowledgeTime: 2.5,   // 직전 인지 이후 이 시간이 지나면 "모르는 상태"
@@ -224,10 +227,12 @@ export const DIFFICULTY = {
       investigateSpeed: 5.6,
       stalkSpeed: 4.0,
       searchSpeed: 3.6,
+      // 눈을 뜨지 않는다 — 오직 소리로만 추적 (근접 감지도 꺼짐)
+      blind: true,
+      senseRadius: 0,
       sightBase: 22,
       sightChase: 27,
       hearBase: 46,        // 걸음(0.42)도 약 19m까지 들림
-      senseRadius: 5.0,
       loseTime: 7.0,
       suspicionTime: 20,
       searchTime: 20,
@@ -239,6 +244,7 @@ export const DIFFICULTY = {
       // 숨는 순간을 절대 놓치지 않는다 — 은신은 거의 의미 없음
       hideKnowledgeTime: 9999,
       hideKnowledgeDist: 9999,
+      hideKnownChance: 0.5, // 단, 들켜도 숨은 뒤 50% 확률로 놓친다
       inspectFindChance: 1.0,
       hideInspectChance: 1.0
     },

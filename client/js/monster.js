@@ -278,6 +278,8 @@ export class Monster {
 
   /* ================= 인지 ================= */
   _seen(player) {
+    // 악몽: 눈을 뜨지 않는다 — 오직 소리로만 추적
+    if (CONFIG.monster.blind) return false;
     // 안전 구역: 시각 인식 완전 차단
     if (player.inSafeZone) return false;
     if (player.hidden) return false;
