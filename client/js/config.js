@@ -1,5 +1,5 @@
 export const CONFIG = {
-  worldRadius: 100,   // 확장 시설 모서리(±66,-70)가 원 안에 들어오도록 여유
+  worldRadius: 72,    // 시설 모서리(±46,-50)와 탈출구(z=-60)가 원 안에 들어오도록 여유
   eyeHeight: 1.68,
   crouchEye: 1.05,
   hideEye: 1.18,

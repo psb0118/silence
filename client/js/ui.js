@@ -210,7 +210,7 @@ export class UI {
     if (!c || !this.minimap || !w || !p) return;
     const W = this.minimap.width, H = this.minimap.height, PAD = 14;
     // 확장된 시설 전체를 담는 경계 (게이트 북쪽 포함)
-    const X0 = -70, X1 = 70, Z0 = -84, Z1 = 54;
+    const X0 = -50, X1 = 50, Z0 = -66, Z1 = 30;
     const sx = (W - PAD * 2) / (X1 - X0);
     const sy = (H - PAD * 2) / (Z1 - Z0);
     const mx = (x) => PAD + (x - X0) * sx;

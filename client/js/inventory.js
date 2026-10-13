@@ -44,11 +44,6 @@ export const ITEM = {
     id: "note_power", name: "작업 일지", kind: "note", color: "#d8d0b8",
     desc: "다시 읽으려면 숫자키를 누른다.",
     text: "「비상 발전기는 이미 죽었다. 차단기를 전부 되살려야 격리 철문의 잠금이 풀린다. 최소 7개.」"
-  },
-  NOTE_CODE: {
-    id: "note_code", name: "새겨진 숫자", kind: "note", color: "#d8d0b8",
-    desc: "다시 읽으려면 숫자키를 누른다.",
-    text: "「벽에 새겨 둔 비밀번호 — 창고: 4812 · 저장고: 7306. 열쇠만으로는 열리지 않는다.」"
   }
 };
 
