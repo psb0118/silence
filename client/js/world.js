@@ -9,9 +9,9 @@ import { rand, makeRng, clamp, dist2 } from "./util.js";
  *  - 시설은 스파인 복도 + 6개의 개성 있는 방으로 구성, 은신처/충전소/랜드마크 포함
  */
 
-// 구역 좌표 (오픈 에어 시설 — 확장판: 방 구조는 동일, 외곽 4면 마당 추가)
+// 구역 좌표 (오픈 에어 시설)
 const C = {
-  OX0: -66, OX1: 66, OZ0: -70, OZ1: 34,   // 외곽 (서쪽·동쪽·북쪽·남쪽 마당 포함)
+  OX0: -46, OX1: 46, OZ0: -50, OZ1: 18,   // 외곽
   spineN: -4, spineS: 2,                    // 복도 벽 (z)
   wallH: 4.4, wallT: 0.45,                  // 점프 눈 apex 2.672·머리 높이 위로 확실히 (눈 위 엿보기 차단)
   headBottom: 3.2,                          // 문 상단 린텔 하단 (머리 높이보다 높게)
@@ -30,9 +30,9 @@ export class World {
     this.grassMaterials = [];
     this.fuses = [];
     this.hidingSpots = [];
-    this.missionSpots = [];   // 부가 미션: 관측 기록대 3 + 현장 테이프 3
     this.drawers = [];
     this.lockedDoors = [];
+    this.traps = [];  // 배치된 덫 {x, z, mesh}
     this.lamps = [];
     this.walls = [];  // 미니맵용 벽 선분
     this.rooms = [];  // 미니맵용 방 목록
@@ -54,7 +54,6 @@ export class World {
     this._buildFog();
     this._buildFuses();
     this._buildDoorsAndLoot();
-    this._buildMissions();
     this._buildGate();
   }
 
@@ -320,7 +319,7 @@ export class World {
 
     for (let i = 0; i < N; i++) {
       const a = rng() * Math.PI * 2;
-      const r = 14 + rng() * 70;
+      const r = 14 + rng() * 48;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
       if (Math.hypot(x, z) < 8) continue;
@@ -349,7 +348,7 @@ export class World {
 
     for (let i = 0; i < 34; i++) {
       const a = rng() * Math.PI * 2;
-      const r = 8 + rng() * 76;
+      const r = 8 + rng() * 50;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
       if (this.inCompound(x, z) || this.inSafeZone(x, z)) continue;
@@ -462,11 +461,14 @@ export class World {
   }
 
   /* ============================================================
-   *  시설 구역 (방 + 복도 구조)
-   *  - z 3개 대지: N실(-50~-30) / M실(-24~-4) / S실(2~18)
-   *  - N실과 M실 사이 '동서 복도 U', M실과 S실 사이 '동서 복도 D'
-   *  - 각 방은 복도에 1~2개의 문(갭)으로 연결되고, 방끼리도 옆문으로 연결
-   *  - 남쪽 외벽(중앙) → 입구, 북쪽 외벽(중앙, 기계실 뒤) → 출구 철문
+   *  시설 구역 (링 복도 + 허브 + 데드엔드 구조)
+   *  - 순환 링: S/W/E/N 복도가 중앙 블록(로비·휴게실·저장소·사무실)을 감싸고
+   *    코너가 모두 열려 있어 도는 동선(Loop)을 형성 — 괴물 추격 회피의 핵심
+   *  - 허브: 남쪽 외벽 입구 → 현관 → (0,10) → S복도 (허브-스포크 시작점)
+   *  - 데드엔드: 서측/동측 폐창고(붉은 등 유인) · 숙소 · 보급실 · 북측 방 5개
+   *  - 숏컷: 잠긴 문 2개(열쇠 또는 비밀번호)가 링을 자르는 지름길
+   *  - 저천장: 출구 통로·좁은 중앙 복도 일부(머리 위 압박)
+   *  - 북쪽 외벽(중앙, 출구통로) → 출구 철문
    * ============================================================ */
   _buildCompound() {
     this.walls = [];      // 미니맵용 벽 선분
@@ -481,108 +483,242 @@ export class World {
     const { OX0, OX1, OZ0, OZ1 } = C;
     const door = (c, w) => ({ center: c, width: w });
 
+    /* =====================================================
+     * [재설계] 순환 링 복도 + 중앙 블록 + 북측 선형 위험 구역
+     *  - 허브: 남쪽 현관(입구) → S복도 (허브-스포크 시작점)
+     *  - 링: S/W/E/N 복도가 중앙 블록을 감싸는 완전 순환 동선
+     *  - 좁은 중앙 복도(x±1.5): 블록을 관통하는 압박 숏컷
+     *  - 숏컷: 잠긴 문 2개(열쇠or비밀번호)가 링을 자르는 지름길
+     *  - 데드엔드: 서/동측 폐창고 (붉은 등으로 유인, 안에서 방향 전환)
+     *  - 눈먼 코너: 블록 코너 연장 벽 + 90° 회전 링
+     *  - 저천장: 출구 통로·중앙 복도 일부(2.8m)
+     * ===================================================== */
+
     // ---- 외곽 벽 ----
-    this._wallLine("x", OZ1, OX0, OX1, [door(0, 5)], H, T, M);      // 남쪽: 입구
-    this._wallLine("x", OZ0, OX0, OX1, [door(0, 4)], H, T, M);      // 북쪽: 출구
+    this._wallLine("x", OZ1, OX0, OX1, [door(0, 5)], H, T, M);      // 남쪽: 입구 → 현관
+    this._wallLine("x", OZ0, OX0, OX1, [door(0, 4)], H, T, M);      // 북쪽: 출구 → 철문
     this._wallLine("z", OX0, OZ0, OZ1, [], H, T, M);
     this._wallLine("z", OX1, OZ0, OZ1, [], H, T, M);
 
-    // ---- 방 ↔ 복도 연결 벽 ----
-    this._wallLine("x", -30, OX0, OX1, [door(-30, 3.5), door(0, 4), door(30, 3.5)], H, T, M); // N실 남벽 / 복도U 북벽
-    this._wallLine("x", -26, OX0, OX1, [door(-30, 3.5), door(0, 4), door(30, 3.5)], H, T, M); // 복도U 남벽 / M실 북벽
-    this._wallLine("x", -4, OX0, OX1, [door(-30, 3.5), door(0, 4), door(30, 3.5)], H, T, M);  // M실 남벽 / 복도D 북벽
-    this._wallLine("x", 0, OX0, OX1, [door(-30, 3.5), door(0, 4), door(30, 4)], H, T, M);     // 복도D 남벽 / S실 북벽
+    // ---- 남쪽 밴드 (z 10..18): 숙소 | 현관(허브) | 보급실 ----
+    this._wallLine("x", 10, OX0, OX1, [door(-24, 3.2), door(0, 4), door(24, 3.2)], H, T, M);
 
-    // ---- 방 사이 벽 (옆문) ----
-    this._wallLine("z", -14, OZ0, -30, [door(-38, 3)], H, T, M);    // R1|R2
-    this._wallLine("z", 14, OZ0, -30, [door(-38, 3)], H, T, M);     // R2|R3
-    this._wallLine("z", -14, -24, -4, [door(-10, 3)], H, T, M);     // R4|R5
-    this._wallLine("z", 14, -24, -4, [door(-10, 3)], H, T, M);      // R5|R6
-    this._wallLine("z", -14, 2, OZ1, [door(7, 3)], H, T, M);        // R7|R8
-    this._wallLine("z", 14, 2, OZ1, [], H, T, M);                   // R8|R9 (만남 없음 → 잠긴 창고)
+    // ---- 중앙 블록 남벽 (z=6, S복도와 경계) ----
+    this._wallLine("x", 6, -30, 30, [door(-20, 3.2), door(0, 3), door(16, 3.2)], H, T, M);
 
-    // ---- 지붕 (방만 덮고 복도는 흐린 밤하늘로 열림) ----
-    this._roof(-30, -40, 32, 20, M);   // R1
-    this._roof(0, -40, 28, 20, M);     // R2
-    this._roof(30, -40, 32, 20, M);    // R3
-    this._roof(-30, -14, 32, 20, M);   // R4
-    this._roof(0, -14, 28, 20, M);     // R5
-    this._roof(30, -14, 32, 20, M);    // R6
-    this._roof(-30, 10, 32, 16, M);    // R7
-    this._roof(0, 10, 28, 16, M);      // R8
-    this._roof(30, 10, 32, 16, M);     // R9
+    // ---- 남쪽 밴드 내부 분할: 숙소 | 현관 | 보급실 (각각 고립 데드엔드) ----
+    this._wallLine("z", -12, 10, 18, [], H, T, M);
+    this._wallLine("z", 12, 10, 18, [], H, T, M);
+
+    // ---- 링 복도 서/동 경계벽 (x=±34: 방 ↔ 복도) ----
+    this._wallLine("z", -34, -34, 10, [door(-20, 3.2), door(0, 4)], H, T, M);  // 통신실·서측 폐창고 동벽
+    this._wallLine("z", 34, -34, 10, [door(-20, 3.2), door(0, 4)], H, T, M);   // 저장동·동측 폐창고 서벽
+
+    // ---- 중앙 블록 외곽 (x=±30) — 코너 눈먼참을 위한 연장 벽 포함 ----
+    //  잠긴 숏컷 문: A(저장소) 3.5 · B(사무실) 4.0 — 벽 갭 폭과 문 폭 일치
+    this._wallLine("z", -30, -31.8, 7.8, [door(-20, 3.2), door(-2, 3.2)], H, T, M);
+    this._wallLine("z", 30, -31.8, 7.8, [door(-22, 3.5), door(-4, 4.0)], H, T, M);
+
+    // ---- 중앙 블록 북벽 (z=-30, N복도와 경계) ----
+    this._wallLine("x", -30, -30, 30, [door(-14, 3.2), door(0, 3), door(20, 3.2)], H, T, M);
+
+    // ---- 북측 밴드 남벽 (z=-34, N복도 ↔ 위험 구역) ----
+    this._wallLine("x", -34, OX0, OX1,
+      [door(-40, 3.2), door(-10, 3.2), door(0, 3), door(10, 3.2), door(34, 3.2)], H, T, M);
+
+    // ---- 서측 구역 분할 (x -46..-34): 통신실(z -34..-6) / 서측 폐창고(z -6..10) ----
+    this._wallLine("x", -6, -46, -34, [], H, T, M);
+    // ---- 동측 구역 분할: 저장동 / 동측 폐창고 ----
+    this._wallLine("x", -6, 34, 46, [], H, T, M);
+
+    // ---- 북측 밴드 내부 (z -50..-34): 기계창고 | 서기록실 | 출구통로 | 동기록실 | 발전기실 ----
+    this._wallLine("z", -20, OZ0, -34, [door(-42, 3.2)], H, T, M);
+    this._wallLine("z", -3, OZ0, -34, [door(-44, 2.8)], H, T, M);
+    this._wallLine("z", 3, OZ0, -34, [door(-44, 2.8)], H, T, M);
+    this._wallLine("z", 20, OZ0, -34, [door(-42, 3.2)], H, T, M);
+
+    // ---- 중앙 블록 내부: 좁은 중앙 복도(x±1.5) + 방 분할 ----
+    this._wallLine("z", -1.5, -30, 6, [door(-20, 2.8), door(-2, 2.8)], H, T, M);
+    this._wallLine("z", 1.5, -30, 6, [door(-22, 2.8), door(-4, 2.8)], H, T, M);
+    this._wallLine("x", -12, -30, -1.5, [door(-14, 3.2)], H, T, M);  // 로비 | 휴게실
+    this._wallLine("x", -14, 1.5, 30, [door(16, 3.2)], H, T, M);     // 저장소 | 사무실
+
+    // ---- 지붕 (방만 덮고 복도/좁은 복도/출구통로는 밤하늘 개방) ----
+    this._roof(-33, -42, 26, 16, M);     // 기계창고
+    this._roof(-11.5, -42, 17, 16, M);   // 서기록실
+    this._roof(11.5, -42, 17, 16, M);    // 동기록실
+    this._roof(33, -42, 26, 16, M);      // 발전기실
+    this._roof(-40, -20, 12, 28, M);     // 통신실
+    this._roof(-40, 2, 12, 16, M);       // 서측 폐창고
+    this._roof(40, -20, 12, 28, M);      // 저장동
+    this._roof(40, 2, 12, 16, M);        // 동측 폐창고
+    this._roof(-29, 14, 34, 8, M);       // 숙소
+    this._roof(0, 14, 24, 8, M);         // 현관
+    this._roof(29, 14, 34, 8, M);        // 보급실
+    this._roof(-15.75, -21, 28.5, 18, M); // 로비
+    this._roof(-15.75, -3, 28.5, 18, M);  // 휴게실
+    this._roof(15.75, -22, 28.5, 16, M);  // 저장소
+    this._roof(15.75, -4, 28.5, 20, M);   // 사무실
+
+    // ---- 낮은 천장 (압박감: 눈높이 위·점프 apex 아래) ----
+    this._lowCeiling(-3, -46, 3, -36);      // 출구 통로
+    this._lowCeiling(-1.5, -14, 1.5, -6);   // 좁은 중앙 복도
 
     // ---- 랜드마크 조명 (발광 전용 — 렉 최적화) ----
-    this._lamp(-30, -28, 0xffa040, 12, 18);   // 복도U 서쪽
-    this._lamp(0, -28, 0xffd0a0, 13, 18);     // 복도U 중앙
-    this._lamp(30, -28, 0xffa040, 12, 18);    // 복도U 동쪽
-    this._lamp(-30, -2, 0xff6a4a, 12, 18);    // 복도D 서쪽(비상등)
-    this._lamp(0, -2, 0x9fd0ff, 13, 18);      // 복도D 중앙
-    this._lamp(30, -2, 0xff6a4a, 12, 18);     // 복도D 동쪽
-    this._lamp(-40, -40, 0xd7263d, 10, 16);   // R1 붉은 비상등
-    this._lamp(-40, -14, 0xd7263d, 10, 16);   // R4 붉은 비상등
-    this._lamp(0, -10, 0xffd9a0, 13, 18);     // R5 로비(따뜻한)
-    this._lamp(30, 8, 0xd7263d, 10, 16);    // R9 붉은 비상등
+    this._lamp(0, 10.8, 0xd7263d, 11, 16);   // 현관 붉은 등 (입구 강제투시 초점)
+    this._lamp(-14, 8, 0xffa040, 12, 16);    // S복도 서
+    this._lamp(14, 8, 0xffa040, 12, 16);     // S복도 동
+    this._lamp(-32, -4, 0xffa040, 12, 16);   // W복도
+    this._lamp(-32, -24, 0xffa040, 12, 16);
+    this._lamp(32, -4, 0xffa040, 12, 16);    // E복도
+    this._lamp(32, -24, 0xffa040, 12, 16);
+    this._lamp(-20, -32, 0xffd0a0, 13, 16);  // N복도
+    this._lamp(20, -32, 0xffd0a0, 13, 16);
+    this._lamp(0, -8, 0x7fe6c8, 10, 12);     // 좁은 복도 (녹색 유도)
+    this._lamp(0, -24, 0x7fe6c8, 10, 12);
+    this._lamp(0, -40, 0x9fd0ff, 13, 18);    // 출구 통로 (차가운 유도등)
+    this._lamp(-42, 8, 0xd7263d, 10, 15);    // 서측 폐창고 끝 (붉은 유인등)
+    this._lamp(42, 8, 0xd7263d, 10, 15);     // 동측 폐창고 끝
+    this._lamp(-40, -28, 0x9fd0ff, 11, 16);  // 통신실
+    this._lamp(40, -28, 0xffb060, 11, 16);   // 저장동
+    this._lamp(-15, -21, 0xffd9a0, 13, 18);  // 로비
+    this._lamp(-15, -3, 0xffd9a0, 13, 18);   // 휴게실
+    this._lamp(15, -22, 0xd7263d, 11, 16);   // 저장소
+    this._lamp(15, -4, 0xffb060, 12, 17);    // 사무실
+    this._lamp(-33, -42, 0x9fd0ff, 12, 17);  // 기계창고
+    this._lamp(33, -42, 0xffb060, 12, 17);   // 발전기실
+    this._lamp(-11, -46, 0x9fd0ff, 10, 14);  // 서기록실
+    this._lamp(11, -46, 0x9fd0ff, 10, 14);   // 동기록실
+    this._lamp(-29, 14, 0xffd9a0, 13, 17);   // 숙소
+    this._lamp(29, 14, 0xffd0a0, 13, 17);    // 보급실
 
-    // ---- 방 천장 실내등 (中心) — 어두운 방 내부를 비춤 ----
-    this._lamp(0, -40, 0x9fd0ff, 13, 18);   // R2 기계실 (차가운 색)
-    this._lamp(30, -40, 0xffb060, 12, 18);  // R3 사무실
-    this._lamp(30, -14, 0xd7263d, 11, 17);  // R6 저장고 (꺼진 구석)
-    this._lamp(-30, 10, 0xffd9a0, 13, 18);  // R7 기숙사
-    this._lamp(0, 10, 0xffd0a0, 13, 18);    // R8 주방
-
-    // ---- 방별 가구/프롭/은신처 ----
-    this._furnishStorage(-30, -40);   // R1 창고
-    this._furnishMachine(0, -40);     // R2 기계실
-    this._furnishOffice(30, -40);     // R3 사무실
-    this._furnishServer(-30, -14);    // R4 통신/서버실
-    this._furnishReception(0, -14);   // R5 로비/리셉션
-    this._furnishStore(30, -14);      // R6 저장고
-    this._furnishDorm(-30, 10);       // R7 숙소
-    this._furnishKitchen(0, 10);      // R8 휴게실/주방
-    this._furnishStore(30, 10);       // R9 잠긴 창고
+    // ---- 방별 가구/프롭/은신처 (좌표 여백 검증 완료) ----
+    // 기계창고 (R1)
+    this._crate(-38, -46, 1.2, this.woodMat);
+    this._crate(-36, -45, 1.0, this.woodMat);
+    this._shelf(-28, -47, 0, 4, this.metalMat);
+    this._shelf(-44, -38, Math.PI / 2, 4, this.metalMat);
+    this._locker(-24, -46, this._yawTo(-1, 0));
+    this._locker(-42, -36, this._yawTo(0, -1));
+    this._barrel(-30, -37);
+    this._generator(-40, -42);
+    // 발전기실 (R2)
+    this._generator(29, -46);
+    this._generator(37, -46);
+    this._shelf(33, -37, 0, 6, this.metalMat);
+    this._crate(27, -38, 1.1, this.woodMat);
+    this._locker(42, -37, this._yawTo(-1, 0));
+    this._barrel(42, -46);
+    // 서기록실 (WingA)
+    this._deskHide(-15, -46, 0);
+    this._deskHide(-8, -46, 0);
+    this._shelf(-11.5, -37, 0, 5, this.metalMat);
+    this._locker(-17, -37, this._yawTo(1, 0));
+    this._crate(-6, -38, 1.0, this.woodMat);
+    // 동기록실 (WingB)
+    this._shelf(11.5, -47, 0, 6, this.metalMat);
+    this._deskHide(7, -37, Math.PI);
+    this._deskHide(14, -37, Math.PI);
+    this._locker(17, -46, this._yawTo(-1, 0));
+    this._crate(6, -46, 1.0, this.woodMat);
+    // 통신실
+    this._shelf(-44, -26, Math.PI / 2, 5, this.metalMat);
+    this._shelf(-44, -14, Math.PI / 2, 5, this.metalMat);
+    this._shelf(-36, -26, -Math.PI / 2, 5, this.metalMat);
+    this._shelf(-36, -12, -Math.PI / 2, 5, this.metalMat);
+    this._cabinet(-40, -30, Math.PI);
+    this._locker(-40, -9, 0);
+    this._deskHide(-40, -17, 0);
+    this._crate(-36, -8, 1.0, this.woodMat);
+    // 서측 폐창고 (데드엔드)
+    this._crate(-44, 6, 1.2, this.woodMat);
+    this._crate(-44, 4.5, 1.0, this.woodMat);
+    this._shelf(-40, -3, 0, 5, this.metalMat);
+    this._deskHide(-42, -2, 0);
+    this._barrel(-36, 6);
+    this._locker(-36, 8, Math.PI);
+    // 저장동
+    this._shelf(44, -26, Math.PI / 2, 5, this.metalMat);
+    this._shelf(44, -14, Math.PI / 2, 5, this.metalMat);
+    this._shelf(36, -26, -Math.PI / 2, 5, this.metalMat);
+    this._shelf(36, -12, -Math.PI / 2, 5, this.metalMat);
+    this._cabinet(40, -30, Math.PI);
+    this._locker(40, -9, 0);
+    this._deskHide(40, -17, 0);
+    this._crate(43, -8, 1.0, this.woodMat);
+    // 동측 폐창고 (데드엔드)
+    this._crate(44, 6, 1.2, this.woodMat);
+    this._crate(44, 4.5, 1.0, this.woodMat);
+    this._shelf(40, -3, 0, 5, this.metalMat);
+    this._deskHide(42, -2, 0);
+    this._barrel(36, 6);
+    this._locker(36, 8, Math.PI);
+    // 숙소 (좁은 방: 침대 2열 + 캐비닛)
+    for (let i = 0; i < 3; i++) {
+      this._bed(-43 + i * 1.6, 12.5, this.woodMat);
+      this._bed(-43 + i * 1.6, 15.5, this.woodMat);
+    }
+    this._locker(-30, 17, Math.PI);
+    this._locker(-28.6, 17, Math.PI);
+    this._cabinet(-24, 17, Math.PI);
+    this._deskHide(-16, 13, 0);
+    this._crate(-34, 17, 1.0, this.woodMat);
+    // 현관 (허브 — 입구에서 붉은 등로 강제 투시)
+    this._addBox(-4, 16.5, 3, 1.0, 1.1, this.woodMat);
+    this._registerHide(-4, 16.5, Math.PI, "crawl", 0.6);
+    this._shelf(8, 17, 0, 4, this.metalMat);
+    this._deskHide(10, 12.5, Math.PI);
+    this._chair(3, 14.5, 0.4, this.woodMat);
+    this._crate(-9, 12.5, 1.1, this.woodMat);
+    this._sign(3, 12.5, 0, 0xff5533);
+    // 보급실
+    this._shelf(29, 17, 0, 6, this.metalMat);
+    this._shelf(20, 17, 0, 6, this.metalMat);
+    this._locker(36, 17, Math.PI);
+    this._locker(37.4, 17, Math.PI);
+    this._deskHide(41, 12.5, Math.PI);
+    this._crate(22, 12.5, 1.1, this.woodMat);
+    this._crate(24, 13.5, 1.0, this.woodMat);
+    this._barrel(18, 13);
+    // 로비 (리셉션)
+    this._furnishReception(-15.75, -21);
+    // 휴게실
+    this._addBox(-17, 2, 5, 1.0, 1.1, this.woodMat);
+    this._cabinet(-23, 2, this._yawTo(0, -1));
+    this._cabinet(-13, 2, this._yawTo(0, -1));
+    this._shelf(-8, -8, Math.PI / 2, 5, this.metalMat);
+    this._chair(-17, -2, 0.4, this.woodMat);
+    this._chair(-15, -4, 0, this.woodMat);
+    this._crate(-26, -8, 1.0, this.woodMat);
+    this._barrel(-4, 4);
+    this._deskHide(-24, -8, 0);
+    // 저장소
+    this._furnishStore(15.75, -22);
+    // 사무실
+    this._furnishOffice(15.75, -4);
 
     // ---- 방 레지스트리 (미니맵) ----
     this.rooms = [
-      { x: -30, z: -40, w: 32, d: 20, name: "창고" },
-      { x: 0, z: -40, w: 28, d: 20, name: "기계실" },
-      { x: 30, z: -40, w: 32, d: 20, name: "사무실" },
-      { x: -30, z: -14, w: 32, d: 20, name: "통신실" },
-      { x: 0, z: -14, w: 28, d: 20, name: "로비" },
-      { x: 30, z: -14, w: 32, d: 20, name: "저장고" },
-      { x: -30, z: 10, w: 32, d: 16, name: "숙소" },
-      { x: 0, z: 10, w: 28, d: 16, name: "휴게실" },
-      { x: 30, z: 10, w: 32, d: 16, name: "창고" }
+      { x: -33, z: -42, w: 26, d: 16, name: "기계창고" },
+      { x: -11.5, z: -42, w: 17, d: 16, name: "서기록실" },
+      { x: 11.5, z: -42, w: 17, d: 16, name: "동기록실" },
+      { x: 33, z: -42, w: 26, d: 16, name: "발전기실" },
+      { x: -40, z: -20, w: 12, d: 28, name: "통신실" },
+      { x: -40, z: 2, w: 12, d: 16, name: "서측 폐창고" },
+      { x: 40, z: -20, w: 12, d: 28, name: "저장동" },
+      { x: 40, z: 2, w: 12, d: 16, name: "동측 폐창고" },
+      { x: -29, z: 14, w: 34, d: 8, name: "숙소" },
+      { x: 0, z: 14, w: 24, d: 8, name: "현관" },
+      { x: 29, z: 14, w: 34, d: 8, name: "보급실" },
+      { x: -15.75, z: -21, w: 28.5, d: 18, name: "로비" },
+      { x: -15.75, z: -3, w: 28.5, d: 18, name: "휴게실" },
+      { x: 15.75, z: -22, w: 28.5, d: 16, name: "저장소" },
+      { x: 15.75, z: -4, w: 28.5, d: 20, name: "사무실" }
     ];
 
-    // ---- 물탱크 / 안테나 (마당 랜드마크) ----
-    this._waterTower(50, 24);
-    this._antenna(-50, 24);
-
-    // ---- 외곽 마당 (확장 구역): 은신·탐색용 크레이트 + 조명 ----
-    this._buildYards();
-  }
-
-  /* ---------- 외곽 마당 (확장 구역) ---------- */
-  _buildYards() {
-    // 마당 조명 (탐색용 랜드마크)
-    this._lamp(-20, -60, 0xffa040, 11, 17);   // 북마당 서쪽
-    this._lamp(20, -60, 0xffa040, 11, 17);    // 북마당 동쪽
-    this._lamp(-58, -10, 0x9fd0ff, 11, 17);   // 서마당
-    this._lamp(58, -10, 0x9fd0ff, 11, 17);    // 동마당
-    this._lamp(0, 26, 0xffd9a0, 12, 18);      // 남마당 (입구 통로)
-
-    // 크레이트 (이동 커버 — 괴물 LOS는 벽 기준이라 시야 차단 아님, 그냥 은폐·회피용)
-    const crates = [
-      [-34, -54, 1.2], [34, -54, 1.2], [-10, -66, 0.9], [12, -66, 1.0],   // 북마당
-      [-58, -34, 1.1], [-54, -6, 1.0],                                    // 서마당
-      [56, -34, 1.1], [54, 0, 1.0], [56, 14, 1.2],                        // 동마당
-      [-12, 28, 1.0], [14, 30, 1.1], [-8, 22, 0.9]                        // 남마당 (입구 통로 x±4 우회)
-    ];
-    for (const [x, z, s] of crates) {
-      if (this.isBlockedPoint(x, z, s * 0.5 + 0.2)) continue;
-      this._crate(x, z, s, this.woodMat);
-    }
+    // ---- 물탱크 / 안테나 (외부 랜드마크) ----
+    this._waterTower(38, 34);
+    this._antenna(-40, 30);
   }
 
   /* ---------- 벽/지붕/조명 헬퍼 ---------- */
@@ -653,6 +789,15 @@ export class World {
     // 0.6 두께·벽 상단과 겹치는 위치 → 천장 관통(머리 pokes)·이음새 틈 차단
     const m = new THREE.Mesh(new THREE.BoxGeometry(w + 0.6, 0.6, d + 0.6), mat);
     m.position.set(cx, this.heightAt(cx, cz) + C.wallH - 0.7, cz);
+    m.castShadow = true; m.userData.castShadow = true;
+    this.scene.add(m);
+  }
+
+  // 낮은 천장 (머리 위로 낮게 눌러 답답함/압박감 — 눈높이 1.67·점프 apex 2.67 위)
+  _lowCeiling(x0, z0, x1, z1, y = 2.8) {
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, 0.16, z1 - z0), this.wallMat);
+    m.position.set(cx, this.heightAt(cx, cz) + y, cz);
     m.castShadow = true; m.userData.castShadow = true;
     this.scene.add(m);
   }
@@ -985,13 +1130,13 @@ export class World {
   /* ---------- 퓨즈 ---------- */
   _buildFuses() {
     const spots = [
-      { x: -40, z: -42 },   // R1 창고
-      { x: 0, z: -34 },     // R2 기계실
-      { x: 40, z: -42 },    // R3 사무실
-      { x: -40, z: 12 },    // R7 숙소
-      { x: 40, z: 12 },     // R9 잠긴 창고
-      { x: -36, z: -18 },   // R4 통신실
-      { x: 36, z: -18 }     // R6 저장고 (잠긴 문 뒤)
+      { x: -31, z: -46 },   // 기계창고 (R1)
+      { x: 25, z: -46 },    // 발전기실 (R2)
+      { x: 11.5, z: -42 },  // 동기록실 (WingB)
+      { x: -40, z: -20 },   // 통신실
+      { x: -15, z: -25 },   // 로비
+      { x: -24, z: 14 },    // 숙소
+      { x: -40, z: 7 }      // 서측 폐창고 (데드엔드)
     ];
     const mat = new THREE.MeshStandardMaterial({ color: 0x7fe6c8, emissive: 0x2fd0a0, emissiveIntensity: 1.6, roughness: 0.4, metalness: 0.3 });
     for (const s of spots) {
@@ -1009,120 +1154,37 @@ export class World {
   }
 
   /* ---------- 서랍 / 잠긴 문 / 전리품 ---------- */
-  // 부가 미션 (전 난이도 공통 · 탈출 조건 = 퓨즈 전부 + 미션 전부)
-  // 관측 기록대 5곳: E 홀드로 기록 (작동음 소음 발생 — 긴장감)
-  // 현장 테이프 5개: E 홀드로 회수
-  // 경보 비콘 3기: E 홀드로 정지 (사이렌 소음 0.4)
-  _buildMissions() {
-    this.missionSpots = [];
-    const cands = [
-      // 관측 기록대 (5)
-      { kind: "scout", x: -6, z: -38 },   // R1 창고 근처
-      { kind: "scout", x: 38, z: -34 },   // R3 사무실 근처
-      { kind: "scout", x: -38, z: 12 },   // R7 숙소 근처
-      { kind: "scout", x: -20, z: -58 },  // 북마당 서쪽
-      { kind: "scout", x: 20, z: -58 },   // 북마당 동쪽
-      // 현장 테이프 (5)
-      { kind: "tape", x: 8, z: -38 },     // R2 기계실
-      { kind: "tape", x: 40, z: -12 },    // R6 저장고
-      { kind: "tape", x: 20, z: -28 },    // 동쪽 복도
-      { kind: "tape", x: -56, z: -20 },   // 서마당
-      { kind: "tape", x: 56, z: -20 },    // 동마당
-      // 경보 비콘 (3)
-      { kind: "beacon", x: -45, z: -60 }, // 북마당 구석
-      { kind: "beacon", x: -58, z: 8 },   // 서마당 남쪽
-      { kind: "beacon", x: 0, z: 26 }     // 남마당 (입구 통로)
-    ];
-    for (const cand of cands) {
-      let x = cand.x, z = cand.z;
-      // 차단 지점이면 결정적 나선 탐색으로 이동
-      for (let r = 1.5; r <= 6.1 && this.isBlockedPoint(x, z, 0.35); r += 1.5) {
-        const a = (r * 2.4 + this.missionSpots.length * 1.7) % (Math.PI * 2);
-        x = cand.x + Math.cos(a) * r;
-        z = cand.z + Math.sin(a) * r;
-      }
-      if (this.inSafeZone(x, z) || this.isBlockedPoint(x, z, 0.35)) continue;
-      const y = this.heightAt(x, z);
-      const g = new THREE.Group();
-      if (cand.kind === "scout") {
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.9, 8),
-          new THREE.MeshStandardMaterial({ color: 0x3a4550, roughness: 0.6, metalness: 0.4 }));
-        post.position.y = 0.45;
-        const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8),
-          new THREE.MeshStandardMaterial({ color: 0x5ad0ff, emissive: 0x3399ff, emissiveIntensity: 2.2 }));
-        lamp.material.fog = false;
-        lamp.position.y = 0.95;
-        g.add(post, lamp);
-      } else if (cand.kind === "beacon") {
-        // 경보 비콘 — 붉은 원통 + 발광 파이어볼 (E 홀드로 정지)
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 1.1, 8),
-          new THREE.MeshStandardMaterial({ color: 0x4a3236, roughness: 0.55, metalness: 0.5 }));
-        post.position.y = 0.55;
-        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8),
-          new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0xcc1111, emissiveIntensity: 3.0 }));
-        bulb.material.fog = false;
-        bulb.position.y = 1.18;
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.03, 6, 14),
-          new THREE.MeshStandardMaterial({ color: 0x662222, emissive: 0x881111, emissiveIntensity: 1.2 }));
-        ring.material.fog = false;
-        ring.rotation.x = Math.PI / 2;
-        ring.position.y = 0.06;
-        g.add(post, bulb, ring);
-      } else {
-        const box = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 0.16),
-          new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.55 }));
-        box.position.y = 0.07;
-        const dot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6),
-          new THREE.MeshStandardMaterial({ color: 0xffb347, emissive: 0xff8800, emissiveIntensity: 2.5 }));
-        dot.material.fog = false;
-        dot.position.set(0, 0.16, 0.06);
-        g.add(box, dot);
-      }
-      g.position.set(x, y, z);
-      g.traverse(o => { o.castShadow = true; });
-      this.scene.add(g);
-      this.missionSpots.push({ kind: cand.kind, x, z, done: false, mesh: g });
-    }
-  }
-
-  resetMissions() {
-    for (const s of this.missionSpots) {
-      s.done = false;
-      if (s.mesh) s.mesh.visible = true;
-    }
-  }
-
   _buildDoorsAndLoot() {
     // 서랍: lootId는 Inventory ITEM id와 일치. 열기/닫기/획득은 독립 상태.
     // 1. 시작 대피소: 파란 창고 열쇠
     this._drawer(2.6, 40.6, Math.PI, "key_shed", "창고 열쇠");
-    // 시설 내부 배터리/아이템
-    this._drawer(-6, -42, Math.PI / 2, "battery", "예비 배터리");  // R1 창고
-    this._drawer(10, 6, Math.PI, "key_store", "저장고 열쇠");      // R8 휴게실 — 빨간 열쇠
-    this._drawer(38, -38, 0, "battery", "예비 배터리");            // R3 사무실
-    this._drawer(-40, 8, 0, "battery", "예비 배터리");             // R7 숙소
-    this._drawer(-8, -18, 0, "battery", "예비 배터리");            // R4 통신/서버실
-    this._drawer(40, -16, 0, "battery", "예비 배터리");            // R6 저장고
-    this._drawer(-8, -16, 0, "note_shed", "찢긴 메모");            // R5 로비 — 단서
-    this._drawer(36, 10, -Math.PI / 2, "battery", "예비 배터리");  // R9 잠긴 창고
+    // 2. 열쇠 (잠긴 숏컷 문 2개)
+    this._drawer(40, 4, -Math.PI / 2, "key_store", "저장고 열쇠");    // 동측 폐창고 (데드엔드)
 
-    // 신규 아이템 / 단서
-    this._drawer(8, -42, 0, "smoke", "연막탄");                    // R2 기계실
-    this._drawer(-6, -10, Math.PI / 2, "medkit", "구급상자");      // R5 로비
-    this._drawer(-38, 6, 0, "decoy", "소음장치");                  // R7 숙소
-    this._drawer(-8, -20, 0, "smoke", "연막탄");                   // R4 통신실
-    this._drawer(34, -36, 0, "note_power", "작업 일지");           // R3 사무실 — 목표 단서
-    this._drawer(30, 14, 0, "medkit", "구급상자");                 // R9 잠긴 창고 내부
+    // 3. 배터리 4개
+    this._drawer(-16, 12, 0, "battery", "예비 배터리");               // 숙소
+    this._drawer(-26, -15, Math.PI / 2, "battery", "예비 배터리");    // 로비
+    this._drawer(26, 2, -Math.PI / 2, "battery", "예비 배터리");      // 사무실
+    this._drawer(-40, -24, Math.PI / 2, "battery", "예비 배터리");    // 통신실
 
-    // 외곽 마당 (확장 구역) 서랍
-    this._drawer(-45, -56, 0, "battery", "예비 배터리");           // 북마당 서쪽
-    this._drawer(45, -56, 0, "medkit", "구급상자");                // 북마당 동쪽
-    this._drawer(-56, 20, 0, "battery", "예비 배터리");            // 서마당 남쪽
-    this._drawer(56, 20, 0, "medkit", "구급상자");                 // 동마당 남쪽
+    // 4. 단서 (비밀번호 일지 2장 — CONFIG.doorCodes와 연동)
+    this._drawer(-44, -44, Math.PI / 2, "note_shed", "찢긴 메모");     // 기계창고 (창고 4172)
+    this._drawer(15.5, -49, 0, "note_power", "작업 일지");            // 동기록실 (저장소 9260)
 
-    // 잠긴 문: 각각 고유 열쇠 필요 (범용 열쇠 아님)
-    this._lockedDoor(30, 0, "x", 4.0, "key_shed", "잠긴 창고 문", "4812");
-    this._lockedDoor(30, -4, "x", 3.5, "key_store", "잠긴 저장고 문", "7306");
+    // 5. 소모품 / 장비
+    this._drawer(40, -46, 0, "smoke", "연막탄");                      // 발전기실
+    this._drawer(36, -8, 0, "smoke", "연막탄");                       // 저장동
+    this._drawer(-8, -2, 0, "medkit", "구급상자");                    // 휴게실
+    this._drawer(5, 13, 0, "medkit", "구급상자");                     // 현관
+    this._drawer(-40, 2, 0, "decoy", "소음장치");                     // 서측 폐창고 (데드엔드)
+    this._drawer(-6, -40, 0, "decoy", "소음장치");                    // 서기록실
+    this._drawer(-42, 17, Math.PI, "trap", "덫");                     // 숙소
+    this._drawer(10, -26, 0, "trap", "덫");                           // 저장소
+    this._drawer(-30, -44, 0, "trap", "덫");                          // 기계창고
+
+    // 잠긴 숏컷 문: 각각 고유 열쇠 또는 비밀번호 (CONFIG.doorCodes)
+    this._lockedDoor(30, -22, "z", 3.5, "key_shed", "잠긴 창고 문");    // E복도 ↔ 저장소
+    this._lockedDoor(30, -4, "z", 4.0, "key_store", "잠긴 저장고 문");  // E복도 ↔ 사무실
   }
 
   _drawer(x, z, yaw, lootId, lootName) {
@@ -1141,6 +1203,8 @@ export class World {
     let handleColor = 0x59616c;
     if (lootId === "key_shed") handleColor = 0x3a7bd5;
     else if (lootId === "key_store") handleColor = 0xd53a3a;
+    else if (lootId === "trap") handleColor = 0x8fa0b0;
+    else if (lootId === "stun") handleColor = 0x7ad7ff;
     const handle = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.05, 0.05),
       new THREE.MeshStandardMaterial({ color: handleColor, roughness: 0.45, metalness: 0.65 }));
     handle.position.set(0, 0.76, 0.33);
@@ -1171,6 +1235,14 @@ export class World {
     return true;
   }
 
+  // 네트워크 동기화용: 토글이 아니라 목표 상태를 지정한다.
+  setDrawer(d, open) {
+    if (!d || d.opened === !!open) return false;
+    d.opened = !!open;
+    d.busy = true;
+    return true;
+  }
+
   // 애니메이션 진행 (world.update에서 호출)
   _updateDrawers(dt) {
     for (const dr of this.drawers) {
@@ -1190,12 +1262,53 @@ export class World {
     return true;
   }
 
-  _lockedDoor(x, z, axis, width, keyId, label, code) {
+  /* ---------- 덫 (배치형 — 플레이어/괴물 모두 밟으면 발동·소멸) ---------- */
+  addTrap(x, z) {
+    if (this.traps.length >= CONFIG.trap.maxPlaced) return null;
+    const y = this.heightAt(x, z);
+    const g = new THREE.Group();
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.5),
+      new THREE.MeshStandardMaterial({ color: 0x3d434a, roughness: 0.5, metalness: 0.5 }));
+    plate.position.y = 0.03;
+    g.add(plate);
+    const spikeMat = new THREE.MeshStandardMaterial({ color: 0x9aa2ab, roughness: 0.3, metalness: 0.8 });
+    for (let i = 0; i < 6; i++) {
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.14, 5), spikeMat);
+      const a = (i / 6) * Math.PI * 2;
+      sp.position.set(Math.cos(a) * 0.15, 0.1, Math.sin(a) * 0.15);
+      g.add(sp);
+    }
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 5),
+      new THREE.MeshStandardMaterial({ color: 0xff5040, emissive: 0xff3020, emissiveIntensity: 2 }));
+    led.position.set(0.2, 0.06, 0.2);
+    g.add(led);
+    g.position.set(x, y, z);
+    this.scene.add(g);
+    const t = { x, z, mesh: g };
+    this.traps.push(t);
+    return t;
+  }
+
+  removeTrap(i) {
+    const t = this.traps[i];
+    if (!t) return null;
+    this.scene.remove(t.mesh);
+    if (t.mesh.geometry) t.mesh.geometry.dispose();
+    this.traps.splice(i, 1);
+    return t;
+  }
+
+  clearTraps() {
+    for (let i = this.traps.length - 1; i >= 0; i--) this.removeTrap(i);
+  }
+
+  _lockedDoor(x, z, axis, width, keyId, label) {
     const y = this.heightAt(x, z);
     const h = 3.2;                           // 린텔 하단(C.headBottom)까지 — 문 위 틈으로 안이 보이지 않게
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, h, 0.22),
       new THREE.MeshStandardMaterial({ color: 0x2f363d, roughness: 0.5, metalness: 0.7 }));
     mesh.position.set(x, y + h / 2 + 0.02, z);
+    if (axis === "z") mesh.rotation.y = Math.PI / 2;   // 세로 벽(축 z)에 맞춰 회전
     mesh.castShadow = true; mesh.userData.castShadow = true;
     this.scene.add(mesh);
 
@@ -1210,7 +1323,8 @@ export class World {
     const box = { minX: x - w / 2, maxX: x + w / 2, minZ: z - dd / 2, maxZ: z + dd / 2 };
     this.boxes.push(box);
 
-    const rec = { x, z, axis, width, mesh, box, indicator: ind, keyId, label, code: code || null, open: false, unlocked: false };
+    const rec = { x, z, axis, width, mesh, box, indicator: ind, keyId, label, open: false,
+      code: CONFIG.doorCodes[keyId] || null };
     this.lockedDoors.push(rec);
     return rec;
   }
@@ -1228,7 +1342,7 @@ export class World {
     return true;
   }
 
-  // 악몽: 예비 배터리 서랍 → 야전 손전등(100% 충전), 창고 단서 메모 → 비밀번호 단서
+  // 악몽: 예비 배터리 서랍을 야전 손전등(100% 충전)으로 교체 — 충전소가 없으므로
   setNightmareLoot(on) {
     for (const d of this.drawers) {
       if (d.lootBaseId === undefined) {
@@ -1238,9 +1352,6 @@ export class World {
       if (on && d.lootBaseId === "battery") {
         d.lootId = "flashlight";
         d.lootName = "야전 손전등";
-      } else if (on && d.lootBaseId === "note_shed") {
-        d.lootId = "note_code";
-        d.lootName = "새겨진 숫자";
       } else {
         d.lootId = d.lootBaseId;
         d.lootName = d.lootBaseName;
@@ -1249,7 +1360,9 @@ export class World {
   }
 
   // 새 게임을 시작할 때 퍼즐/전리품 상태를 초기화
-  resetInteractive() {    for (const d of this.drawers) {
+  resetInteractive() {
+    this.clearTraps();
+    for (const d of this.drawers) {
       d.opened = false;
       d.anim = 0;
       d.looted = false;
@@ -1257,7 +1370,6 @@ export class World {
       d.face.position.z = 0.28;
     }
     for (const door of this.lockedDoors) {
-      door.unlocked = false;
       if (door.open) {
         door.open = false;
         door.mesh.visible = true;
@@ -1273,7 +1385,7 @@ export class World {
 
   /* ---------- 출구 철문 ---------- */
   _buildGate() {
-    const gx = 0, gz = -80;   // 북마당 끝 (외곽 벽 z=-70에서 10m 북쪽)
+    const gx = 0, gz = -60;
     const gy = this.heightAt(gx, gz);
     const metalMat = new THREE.MeshStandardMaterial({ color: 0x3a4048, roughness: 0.5, metalness: 0.75 });
 

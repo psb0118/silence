@@ -138,6 +138,31 @@ export const CONFIG = {
     minZ: 33.0, maxZ: 52.0
   },
 
+  // 잠긴 문 비밀번호 (열쇠가 없으면 키패드로 입력 — NOTE_SHED에 힌트 존재)
+  doorCodes: {
+    key_shed: "4172",
+    key_store: "9260"
+  },
+
+  // 전기 충격기 (소모품 아님, 재사용)
+  stun: {
+    range: 3.2,        // 사거리 (벽으로 막히면 명중 X)
+    duration: 3.0,     // 괴물 스턴 시간
+    cooldown: 9.0      // 재사용 대기 시간(초)
+  },
+
+  // 덫 (배치형, 1회 소멸 — 플레이어/괴물 동일 규칙)
+  trap: {
+    triggerR: 0.62,        // 밟기 반경 (플레이어)
+    monsterR: 0.8,         // 밟기 반경 (괴물)
+    playerStun: 3.0,       // 플레이어 스턴
+    playerSprintLock: 5.0, // 플레이어 달리기 잠금
+    monsterStun: 3.0,      // 괴물 스턴
+    monsterSlow: 5.0,      // 괴물 스턴 후 느림
+    startCount: 5,         // 시작 지급 수량
+    maxPlaced: 12
+  },
+
   assist: {
     showNearestDistance: true,
     ambientScareMin: 24,

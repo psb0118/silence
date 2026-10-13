@@ -27,10 +27,18 @@ export const ITEM = {
     id: "decoy", name: "소음장치", kind: "use", color: "#c9a0ff",
     desc: "앞으로 던져 괴물을 다른 곳으로 유인한다. 숫자키로 꺼냈다가 다시 누르면 사용한다."
   },
+  STUN: {
+    id: "stun", name: "전기 충격기", kind: "stun", color: "#7ad7ff",
+    desc: "범위 안 괴물을 3초 스턴시킨다. 소모품이 아니며 쿨다운이 있다. F 또는 같은 숫자키로 사용."
+  },
+  TRAP: {
+    id: "trap", name: "덫", kind: "trap", color: "#8fa0b0",
+    desc: "앞 바닥에 배치한다. 괴물/나 모두 밟으면 3초 스턴 + 5초(괴물은 느림) — 1회 소멸. F로 사용."
+  },
   NOTE_SHED: {
     id: "note_shed", name: "찢긴 메모", kind: "note", color: "#d8d0b8",
     desc: "다시 읽으려면 숫자키를 누른다.",
-    text: "「잠금이 색으로 나뉜다… 파란 쪽은 창고, 빨간 쪽은 저장고. 섞여 쓰면 안 된다.」"
+    text: "「옛날에 창고와 저장소를 다녀왔던거 같은데.... 창고의 비밀번호는 4172이었고, 저장소는 9260였던거 같은데...」\n\n파란 쪽은 창고, 빨간 쪽은 저장고. 섞여 쓰면 안 된다."
   },
   NOTE_POWER: {
     id: "note_power", name: "작업 일지", kind: "note", color: "#d8d0b8",
@@ -80,6 +88,15 @@ export class Inventory {
       return this.slots.some((s) => s.id && s.id.startsWith("key_") && s.count > 0);
     }
     return this.slots.some((s) => s.id === keyId && s.count > 0);
+  }
+  // 네트워크에서 '집을 수 있는가'를 변이 없이 검사 (호스트는 요청자 인벤토리를 모른다)
+  canAdd(id, count = 1) {
+    const def = getItemDef(id);
+    if (def && def.kind === "use") {
+      const ex = this.slots.find((s) => s.id === id && s.count > 0);
+      if (ex) return ex.count + count <= 9;
+    }
+    return this.findEmpty() >= 0;
   }
   // 열쇠는 소모하지 않고 유지 (문 개방에만 사용)
   removeKey() { return false; }

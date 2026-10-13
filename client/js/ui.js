@@ -37,6 +37,10 @@ export class UI {
     this.noteModal = $("#note-modal");
     this.noteTitle = $("#note-title");
     this.noteBody = $("#note-body");
+    this.keypadModal = $("#keypad-modal");
+    this.keypadTitle = $("#keypad-title");
+    this.keypadDisplay = $("#keypad-display");
+    this.onKeypadKey = null;   // main에서 keypadPress로 설정
     this.minimap = $("#minimap");
     this.minimapCtx = this.minimap && this.minimap.getContext("2d");
     this.mapVisible = false;
@@ -54,6 +58,13 @@ export class UI {
     this._noteT = null;
     if (this.noteModal) {
       this.noteModal.addEventListener("click", () => this.hideNote());
+    }
+    if (this.keypadModal) {
+      this.keypadModal.querySelectorAll("#keypad-keys button").forEach((b) => {
+        b.addEventListener("click", () => {
+          if (this.onKeypadKey) this.onKeypadKey(b.dataset.k);
+        });
+      });
     }
     this._drawScareFace();
   }
@@ -444,7 +455,38 @@ export class UI {
     if (this.noteModal) this.noteModal.classList.add('hidden');
   }
   isNoteOpen() {
-    return !!this.noteModal && !this.noteModal.classList.contains('hidden');
+    return !!this.noteModal && !this.noteModal.classList.contains("hidden");
+  }
+
+  /* 비밀번호 키패드 */
+  showKeypad(label) {
+    if (!this.keypadModal) return;
+    if (this.keypadTitle) this.keypadTitle.textContent = (label || "잠긴 문") + " — 비밀번호";
+    this.keypadModal.classList.remove("hidden");
+  }
+  hideKeypad() {
+    if (!this.keypadModal) return;
+    this.keypadModal.classList.add("hidden");
+    this.keypadModal.classList.remove("kp-error");
+  }
+  isKeypadOpen() {
+    return !!this.keypadModal && !this.keypadModal.classList.contains("hidden");
+  }
+  keypadSet(buf) {
+    if (!this.keypadDisplay) return;
+    const chars = [];
+    for (let i = 0; i < 4; i++) chars.push(i < buf.length ? buf[i] : "–");
+    this.keypadDisplay.textContent = chars.join(" ");
+    if (buf.length) this.keypadDisplay.classList.add("kp-filled");
+    else this.keypadDisplay.classList.remove("kp-filled");
+  }
+  keypadError() {
+    if (!this.keypadModal) return;
+    this.keypadModal.classList.remove("kp-error");
+    // reflow로 애니메이션 재시작
+    void this.keypadModal.offsetWidth;
+    this.keypadModal.classList.add("kp-error");
+    setTimeout(() => this.keypadModal && this.keypadModal.classList.remove("kp-error"), 500);
   }
 
   showInvEmpty(ms = 1200) {

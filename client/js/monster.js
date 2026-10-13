@@ -54,6 +54,10 @@ export class Monster {
     this._grace = 0;
     this.attackAnim = 0;
 
+    // 스턴(충격기·덫) / 스턴 후 둔화(덫)
+    this.stunT = 0;
+    this.slowT = 0;
+
     // 사운드 타이머
     this._snd = { growl: rand(1, 3), breathe: rand(0.5, 2), whisper: rand(3, 8), step: 0, sniff: rand(2, 5) };
 
@@ -297,6 +301,22 @@ export class Monster {
     return !this.world.lineBlocked(this.x, this.z, player.x, player.z);
   }
 
+  // 벽+연막 없이 바로 보이는가 (근접 감지용)
+  _clearLOS(x0, z0, x1, z1) {
+    if (this._smokeBlocks(x0, z0, x1, z1)) return false;
+    return !this.world.lineBlocked(x0, z0, x1, z1);
+  }
+
+  _inSmoke(x, z) {
+    const smokes = this.world.smokes;
+    if (!smokes || !smokes.length) return false;
+    for (let i = 0; i < smokes.length; i++) {
+      const s = smokes[i];
+      if (Math.hypot(x - s.x, z - s.z) < s.r) return true;
+    }
+    return false;
+  }
+
   // 시선(괴물↔플레이어)이 연막 구름을 관통하면 시야 차단
   _smokeBlocks(x0, z0, x1, z1) {
     const smokes = this.world.smokes;
@@ -335,6 +355,8 @@ export class Monster {
       if (e.intensity < cfg.hearMinIntensity) continue;
       // 안전 구역 소음 무시
       if (this.world.inSafeZone(e.x, e.z)) continue;
+      // 연막 소음 마스킹: 소음이 연막 안에서 났는데 괴물이 연막 밖이면 못 들음
+      if (this._inSmoke(e.x, e.z) && !this._inSmoke(this.x, this.z)) continue;
       const d = Math.hypot(e.x - this.x, e.z - this.z);
       const range = cfg.hearBase * e.intensity;
       if (d > range) continue;
@@ -409,12 +431,27 @@ export class Monster {
 
   /* ================= 업데이트 ================= */
   update(dt, player, sharedEvents = null) {
+    if (this.ghost) { this._ghostUpdate(dt, player); return; }
     this.time += dt;
     this._playerRef = player;
     const cfg = CONFIG.monster;
     this._repathTimer -= dt;
     this.stateTime += dt;
     if (this._grace > 0) this._grace -= dt;
+    if (this.slowT > 0) this.slowT = Math.max(0, this.slowT - dt);
+
+    // 스턴 중: AI·이동 정지 (어지러움 흔들림 + 연출만 유지)
+    if (this.stunT > 0) {
+      this.stunT = Math.max(0, this.stunT - dt);
+      this._caught = false;
+      this.moveSpeedActual = damp(this.moveSpeedActual, 0, 10, dt);
+      this.yaw += Math.sin(this.time * 22) * 0.09;
+      this._stuckTimer = 0;
+      this._animate(dt, 0);
+      this._syncModel();
+      if (this.stunT <= 0) this._repathTimer = 0;
+      return;
+    }
     this.suspicion = clamp(this.suspicion - dt / cfg.suspicionTime, 0, 1.6);
 
     // 플레이어 은신 진입 판정
@@ -459,7 +496,9 @@ export class Monster {
     const hearBest = playerSafe ? null : this._consumeNoise(sharedEvents);
     const sees = playerSafe ? false : this._seen(player);
     const dToPlayer = Math.hypot(player.x - this.x, player.z - this.z);
-    const veryClose = !player.hidden && !playerSafe && dToPlayer < cfg.senseRadius;
+    // 근접 감지: 벽/연막 뒤(다른 방)에서는 느끼지 못한다
+    const veryClose = !player.hidden && !playerSafe && dToPlayer < cfg.senseRadius &&
+      this._clearLOS(this.x, this.z, player.x, player.z);
 
     if (hearBest) this._reactToNoise(hearBest);
 
@@ -598,6 +637,9 @@ export class Monster {
     // 안전지대 경계 상시 준수
     this.target = this._safeTarget(this.target);
 
+    // 덫 스턴 후 둔화: 잠시 느리게 이동
+    if (this.slowT > 0) speed *= 0.5;
+
     if (moving && this.state !== STATE.ATTACK) {
       if (this.state === STATE.CHASE ? true : this._hadTarget()) this._move(dt, speed);
       else { this.moveSpeedActual = damp(this.moveSpeedActual, 0, 8, dt); this._stuckTimer = 0; }
@@ -612,8 +654,9 @@ export class Monster {
       this.yaw = angleLerp(this.yaw, desired, clamp(cfg.turnLerp * 0.6 * dt, 0, 1));
     }
 
-    // 잡기 판정 (안전지대 밖, 은신 중 아닌 경우에만 즉시)
-    if (!playerSafe && !player.hidden && !this._caught && dToPlayer < cfg.catchRadius && this.onCatch) {
+    // 잡기 판정 (안전지대 밖, 은신 중 아닌 경우에만 즉시) — 벽 너머(다른 방)에서는 못 잡음
+    if (!playerSafe && !player.hidden && !this._caught && dToPlayer < cfg.catchRadius &&
+        !this.world.lineBlocked(this.x, this.z, player.x, player.z) && this.onCatch) {
       this._caught = true;
       this.onCatch();
     }
@@ -623,6 +666,58 @@ export class Monster {
     this._audio(dt, dToPlayer, player, speed01);
     this._syncModel();
   }
+
+  /* 네트워크 고스트 — host가 보낸 스냅샷(netTarget/netState/stunT)만 반복한다.
+     AI·경로탐색·포획 판정은 host 전용. 클라이언트는 여기서 애니메이션/오디오만 돌린다. */
+  _ghostUpdate(dt, player) {
+    this.time += dt;
+    this._playerRef = player;
+    const cfg = CONFIG.monster;
+    const t = this.netTarget;
+    if (t) {
+      const k = Math.min(1, dt * 14);
+      const dx = t.x - this.x, dz = t.z - this.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > 0.002) {
+        this.x += dx * k;
+        this.z += dz * k;
+        this.yaw = angleLerp(this.yaw, t.yaw, Math.min(1, dt * 8));
+        this.moveSpeedActual = dist * k / Math.max(dt, 1e-4);
+      } else {
+        this.x = t.x; this.z = t.z;
+        this.yaw = t.yaw;
+        this.moveSpeedActual = damp(this.moveSpeedActual, 0, 8, dt);
+      }
+    } else {
+      this.moveSpeedActual = damp(this.moveSpeedActual, 0, 8, dt);
+    }
+
+    if (this.state === STATE.ATTACK) this._attackPhase += dt;
+    else this._attackPhase = 0;
+
+    if (this.stunT > 0) {
+      this.stunT = Math.max(0, this.stunT - dt);
+      this.yaw += Math.sin(this.time * 22) * 0.09;
+      this._animate(dt, 0);
+      this._syncModel();
+      return;
+    }
+    if (this.slowT > 0) this.slowT = Math.max(0, this.slowT - dt);
+
+    const speed01 = clamp(this.moveSpeedActual / cfg.chaseSpeed, 0, 1);
+    this._animate(dt, speed01);
+    const dToPlayer = Math.hypot(player.x - this.x, player.z - this.z);
+    this._audio(dt, dToPlayer, player, speed01);
+    this._syncModel();
+  }
+
+  // host → client 상태 동기화 훅
+  setNetTarget(x, z, yaw) {
+    if (this.netTarget) { this.netTarget.x = x; this.netTarget.z = z; this.netTarget.yaw = yaw; }
+    else this.netTarget = { x, z, yaw };
+  }
+
+  setNetState(s) { if (s && s !== this.state) this._setState(s); }
 
   _resolveInspect(spot, player) {
     const cfg = CONFIG.monster;
@@ -677,7 +772,8 @@ export class Monster {
     } else {
       this.moveSpeedActual = 0;
     }
-    if (!playerSafe && !player.hidden && !this._caught && d < cfg.catchRadius && this._attackPhase > cfg.attackWindup && this.onCatch) {
+    if (!playerSafe && !player.hidden && !this._caught && d < cfg.catchRadius && this._attackPhase > cfg.attackWindup &&
+        !this.world.lineBlocked(this.x, this.z, player.x, player.z) && this.onCatch) {
       this._caught = true;
       this.onCatch();
     }
@@ -1053,8 +1149,19 @@ export class Monster {
     this.attackAnim = 0;
     this._lastStep = -1;
     this._searchTarget = null;
+    this.stunT = 0;
+    this.slowT = 0;
     this._pickRoamTarget();
     this._syncModel();
+  }
+
+  // 스턴(충격기·덫): AI·이동 정지, 어지러움 흔들림
+  stun(t) {
+    this.stunT = Math.max(this.stunT, t);
+    this._caught = false;
+    this._attackPhase = 0;
+    this._path = [];
+    this.moveSpeedActual = 0;
   }
 }
 

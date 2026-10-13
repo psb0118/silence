@@ -25,6 +25,8 @@ export class Player {
     this.crouching = false;
     this.sprinting = false;
     this.sprintBlocked = false;
+    this.stunT = 0;        // 스턴(충격기/덫) — 이동·점프 불가
+    this.sprintLockT = 0;  // 스턴 후 달리기 잠금 (덫)
 
     this.eyeHeight = CONFIG.eyeHeight;
     this.stamina = CONFIG.stamina.max;
@@ -216,7 +218,85 @@ export class Player {
     flashlight.add(fLens);
     flashlight.rotation.x = -0.55;
 
-    this.heldModels = { battery, medkit, smoke, decoy, flashlight };
+    // 열쇠 (창고/저장소)
+    const makeKey = (colorHex) => {
+      const g = make();
+      const shaft = new THREE.Mesh(
+        new THREE.BoxGeometry(0.012, 0.012, 0.1),
+        new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.35, metalness: 0.7 })
+      );
+      g.add(shaft);
+      const tooth = new THREE.Mesh(
+        new THREE.BoxGeometry(0.02, 0.008, 0.018),
+        new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.35, metalness: 0.7 })
+      );
+      tooth.position.set(0.011, 0, -0.034);
+      g.add(tooth);
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.02, 0.005, 6, 14),
+        new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.3, metalness: 0.75 })
+      );
+      ring.position.z = 0.06;
+      g.add(ring);
+      g.rotation.x = -0.7;
+      return g;
+    };
+    const key_shed = makeKey(0xd8b64a);      // 창고 열쇠 (금색)
+    const key_store = makeKey(0x9fb8d8);     // 저장소 열쇠 (은색)
+
+    // 메모/종이
+    const makeNote = (tint) => {
+      const g = make();
+      const paper = new THREE.Mesh(
+        new THREE.BoxGeometry(0.1, 0.14, 0.003),
+        new THREE.MeshStandardMaterial({ color: tint, roughness: 0.95 })
+      );
+      g.add(paper);
+      g.rotation.set(-0.9, 0.1, 0.08);
+      return g;
+    };
+    const note_shed = makeNote(0xe8e0cc);
+    const note_power = makeNote(0xdcd6c2);
+
+    // 덫 (배치용 스파이크 트랩)
+    const trap = make();
+    const trapPlate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 0.03, 0.16),
+      new THREE.MeshStandardMaterial({ color: 0x4b5158, roughness: 0.5, metalness: 0.55 })
+    );
+    trap.add(trapPlate);
+    const spikeMat = new THREE.MeshStandardMaterial({ color: 0x9aa2ab, roughness: 0.3, metalness: 0.8 });
+    for (let i = 0; i < 4; i++) {
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.05, 5), spikeMat);
+      sp.position.set(i < 2 ? -0.05 : 0.05, 0.04, i % 2 ? -0.05 : 0.05);
+      trap.add(sp);
+    }
+    trap.rotation.x = -0.5;
+
+    // 전기 충격기 (스턴 배턴)
+    const stun = make();
+    const baton = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.02, 0.022, 0.2, 10),
+      new THREE.MeshStandardMaterial({ color: 0x23272d, roughness: 0.5, metalness: 0.4 })
+    );
+    stun.add(baton);
+    const batonHead = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.03, 0.024, 0.05, 10),
+      new THREE.MeshStandardMaterial({ color: 0x3a4048, roughness: 0.4, metalness: 0.6 })
+    );
+    batonHead.position.y = 0.12;
+    stun.add(batonHead);
+    const spark1 = new THREE.Mesh(
+      new THREE.SphereGeometry(0.007, 6, 5),
+      new THREE.MeshStandardMaterial({ color: 0x9fe8ff, emissive: 0x54c8ff, emissiveIntensity: 2.4 })
+    );
+    spark1.position.set(0.012, 0.145, 0);
+    const spark2 = spark1.clone();
+    spark2.position.x = -0.012;
+    stun.add(spark1, spark2);
+    stun.rotation.x = -0.6;
+
+    this.heldModels = { battery, medkit, smoke, decoy, flashlight, key_shed, key_store, note_shed, note_power, trap, stun };
     root.position.set(0.24, -0.26, -0.44);
     root.rotation.y = -0.05;
     this.camera.add(root);
@@ -294,8 +374,17 @@ export class Player {
     const w = this.world;
     this.updateBattery(dt);
     if (this.invuln > 0) this.invuln = Math.max(0, this.invuln - dt);
+    if (this.stunT > 0) this.stunT = Math.max(0, this.stunT - dt);
+    if (this.sprintLockT > 0) this.sprintLockT = Math.max(0, this.sprintLockT - dt);
 
     if (this.hidden) { this._updateHidden(dt); return; }
+
+    // 스턴 중: 모든 조작 무시 (카메라 시선은 마우스로 유지)
+    const stunned = this.stunT > 0;
+    if (stunned) {
+      input = { forward: false, back: false, left: false, right: false, sprint: false, crouch: false, jump: false };
+      this._cameraShake = Math.max(this._cameraShake, 0.4);
+    }
 
     const groundY = w.heightAt(this.x, this.z);
 
@@ -303,7 +392,7 @@ export class Player {
     this.crouching = !!input.crouch;
     const S = CONFIG.stamina;
     const canStart = this.stamina >= S.minStart * S.max;
-    const wantSprint = !!input.sprint && !this.crouching && movingInput &&
+    const wantSprint = !!input.sprint && !this.crouching && movingInput && this.sprintLockT <= 0 &&
       (this.sprinting ? this.stamina > 0.02 : canStart);
     this.sprintBlocked = !!input.sprint && !this.crouching && movingInput && !wantSprint;
     this.sprinting = wantSprint;
@@ -521,6 +610,16 @@ export class Player {
 
   addCameraShake(v) { this._cameraShake = Math.max(this._cameraShake, v); }
 
+  /* ---------- 스턴 (충격기·덫) ---------- */
+  stun(t) {
+    this.stunT = Math.max(this.stunT, t);
+    this.sprinting = false;
+    this.vx *= 0.15; this.vz *= 0.15;
+    this.noise.setMovement(0);
+  }
+  lockSprint(t) { this.sprintLockT = Math.max(this.sprintLockT, t); }
+  get stunned() { return this.stunT > 0; }
+
   /* ---------- 피격 / 넉백 ---------- */
   setMaxHp(max) {
     this.maxHp = max;
@@ -553,6 +652,8 @@ export class Player {
     this.pitch = 0;
     this.crouching = false;
     this.sprinting = false;
+    this.stunT = 0;
+    this.sprintLockT = 0;
     this.hidden = false;
     if (this.hideSpot) { this.hideSpot.occupied = false; this.hideSpot = null; }
     this.stamina = CONFIG.stamina.max;

@@ -70,15 +70,8 @@
 
     <!-- 목표 / 상태 -->
     <div id="objective">
-      <div id="obj-main">차단기와 부가 미션을 모두 완수해 철문을 열어라</div>
+      <div id="obj-main">차단기를 찾아 전원을 복구하세요</div>
       <div id="obj-sub">차단기 <b><span id="fuse-count">0</span>/<span id="fuse-total">7</span></b> · 가장 가까운 차단기 <b><span id="fuse-dist">--</span>m</b></div>
-    </div>
-
-    <!-- 부가 미션 (관측 · 테이프 · 경보 비콘 — 전부 완수해야 탈출) -->
-    <div id="missions">
-      <div class="mis-row"><span class="mis-key scout">관측</span> 기록 <b id="mis-scout">0/5</b></div>
-      <div class="mis-row"><span class="mis-key tape">테이프</span> 회수 <b id="mis-tape">0/5</b></div>
-      <div class="mis-row"><span class="mis-key beacon">비콘</span> 정지 <b id="mis-beacon">0/3</b></div>
     </div>
 
     <!-- 미니맵 (M 키) -->
@@ -119,13 +112,18 @@
     </div>
   </div>
 
-  <!-- ================= 비밀번호 키패드 (악몽 퍼즐) ================= -->
+  <!-- ================= 잠긴 문 비밀번호 키패드 ================= -->
   <div id="keypad-modal" class="hidden">
     <div class="keypad-card">
-      <div id="keypad-title">비밀번호 잠금</div>
-      <div id="keypad-display">· · · ·</div>
-      <div id="keypad-status"></div>
-      <div class="keypad-hint">숫자키 입력 · Enter 확인 · Esc 취소</div>
+      <h4 id="keypad-title">비밀번호 입력</h4>
+      <div id="keypad-display">– – – –</div>
+      <div id="keypad-keys">
+        <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+        <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+        <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+        <button data-k="c" class="kp-fn">지움</button><button data-k="0">0</button><button data-k="x" class="kp-fn">취소</button>
+      </div>
+      <div class="note-hint">키보드 숫자키로도 입력할 수 있다 · ESC로 닫기</div>
     </div>
   </div>
 
@@ -145,7 +143,7 @@
             <li><span>Shift</span> 달리기 (소음↑)</li>
             <li><span>C</span> 앉기 (소음↓)</li>
             <li><span>Space</span> 점프</li>
-            <li><span>F / 마우스 좌클릭</span> 손전등 켜고 끄기</li>
+            <li><span>F / 마우스 좌클릭</span> 상황대응 — 손에 든 아이템 사용, 맨손이면 손전등</li>
             <li><span>E</span> 상호작용 / 은신처에서 나오기</li>
             <li><span>V</span> 마이크 켜고 끄기</li>
             <li><span>M</span> 지도 보기 (구역 구조 · 내 위치)</li>
@@ -191,7 +189,43 @@
         </div>
 
         <button id="btn-start" class="big-btn">숲으로 들어가기</button>
+        <button id="btn-mp" class="ghost-btn">협동 멀티플레이 (최대 4인)</button>
         <p id="start-note" class="note"></p>
+        <p id="mp-note" class="note"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 협동 멀티플레이 (방 코드 로비) ================= -->
+  <div id="mp" class="overlay hidden">
+    <div class="box small">
+      <h2>협동 멀티플레이</h2>
+      <p class="flavor">방 코드를 알려주면 최대 4명이 함께 탈출할 수 있다. 한 명이 방장이다.</p>
+
+      <div id="mp-menu">
+        <div class="setting">
+          <label>내 이름</label>
+          <input type="text" id="mp-name" maxlength="12" placeholder="생존자" />
+        </div>
+        <div class="pause-actions">
+          <button id="mp-create" class="big-btn">방 만들기</button>
+        </div>
+        <div class="setting">
+          <label>방 코드</label>
+          <input type="text" id="mp-code" maxlength="4" placeholder="4자 코드" autocapitalize="characters" />
+          <button id="mp-join" class="ghost-btn">참가</button>
+        </div>
+        <p id="mp-status" class="note"></p>
+      </div>
+
+      <div id="mp-lobby" class="hidden">
+        <div class="mp-code-row">방 코드 <b id="mp-roomcode">----</b></div>
+        <ul id="mp-roster"></ul>
+        <div class="pause-actions">
+          <button id="mp-start" class="big-btn">게임 시작</button>
+          <button id="mp-back" class="ghost-btn">나가기</button>
+        </div>
+        <p id="mp-status2" class="note"></p>
       </div>
     </div>
   </div>
@@ -247,7 +281,6 @@
       <div class="death-stats">
         <div><span>생존 시간</span><b id="stat-time">0:00</b></div>
         <div><span>모은 차단기</span><b id="stat-fuse">0</b></div>
-        <div><span>부가 미션</span><b id="stat-missions">0/6</b></div>
       </div>
       <button id="btn-respawn" class="big-btn">다시 숲으로</button>
     </div>
@@ -261,7 +294,6 @@
       <div class="death-stats">
         <div><span>클리어 시간</span><b id="win-time">0:00</b></div>
         <div><span>들린 소리</span><b id="win-noise">0</b></div>
-        <div><span>부가 미션</span><b id="win-missions">0/6</b></div>
       </div>
       <button id="btn-again" class="big-btn">다시 플레이</button>
     </div>

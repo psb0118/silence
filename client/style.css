@@ -255,26 +255,6 @@ html, body {
   z-index: 15; pointer-events: none;
 }
 
-/* 부가 미션 HUD (관측 기록 · 현장 테이프) */
-#missions {
-  position: absolute; top: 150px; left: 20px;
-  background: rgba(8,14,20,0.72);
-  border: 1px solid #2a3f55; border-radius: 6px;
-  padding: 8px 10px; min-width: 148px;
-  z-index: 14; pointer-events: none;
-}
-.mis-row {
-  font-size: 12px; color: #9fb2c3; letter-spacing: .04em; line-height: 1.8;
-}
-.mis-row b { color: #e7edf3; margin-left: 4px; }
-.mis-key {
-  display: inline-block; padding: 0 5px; border-radius: 3px;
-  font-size: 10px; font-weight: 700; margin-right: 2px;
-}
-.mis-key.scout { background: rgba(90,208,255,0.16); color: #5ad0ff; }
-.mis-key.tape { background: rgba(255,179,71,0.16); color: #ffb347; }
-.mis-key.beacon { background: rgba(255,80,80,0.16); color: #ff6a6a; }
-
 /* ================= 오버레이 ================= */
 /* overflow 안전 중앙정렬: 내용이 화면보다 크면 위아래 모두 스크롤로 접근 가능 */
 .overlay {
@@ -520,31 +500,26 @@ html, body {
 }
 
 
-/* ��й�ȣ Ű�е� (�Ǹ� ����) */
-#keypad-modal {
-  position: fixed; inset: 0; z-index: 88;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(2,4,8,0.55);
-  pointer-events: none;
+/* ================= 협동 멀티플레이 ================= */
+#btn-mp { display: block; margin: 10px auto 0; }
+#btn-mp:disabled { opacity: .4; cursor: not-allowed; }
+#mp .flavor { margin-bottom: 10px; }
+#mp .setting input[type=text] {
+  flex: 1; min-width: 0;
+  background: #141a22; color: #e6edf3;
+  border: 1px solid rgba(255,255,255,0.14); border-radius: 8px;
+  padding: 9px 10px; font-size: 14px; letter-spacing: .14em; text-transform: uppercase;
 }
-#keypad-modal.hidden { display: none; }
-.keypad-card {
-  min-width: 260px;
-  background: rgba(8,11,17,0.94);
-  border: 1px solid rgba(255,255,255,0.14);
-  border-radius: 14px;
-  padding: 18px 30px 16px;
-  text-align: center;
-  box-shadow: 0 14px 50px rgba(0,0,0,0.65), 0 0 30px rgba(240,181,106,0.08);
+#mp .setting input[type=text]::placeholder { color: #5f7280; letter-spacing: .06em; }
+#mp .setting .ghost-btn { margin-left: 0; padding: 9px 18px; font-size: 13px; }
+#mp .pause-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.mp-code-row { font-size: 13px; color: #b9c6d2; letter-spacing: .1em; margin: 4px 0 12px; }
+.mp-code-row b { font-size: 26px; color: #7ff0b0; letter-spacing: .32em; margin-left: 6px; }
+#mp-roster { list-style: none; margin: 0 0 6px; padding: 0; max-height: 190px; overflow-y: auto; }
+#mp-roster li {
+  padding: 8px 12px; margin-bottom: 6px;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 8px; font-size: 13px; color: #cfd6df;
 }
-#keypad-title { font-size: 12px; color: #9fb0bf; letter-spacing: .22em; text-transform: uppercase; }
-#keypad-display {
-  font: 800 36px/1 "Consolas", monospace;
-  letter-spacing: .28em; color: #f0b56a;
-  margin: 16px 0 8px;
-  text-shadow: 0 0 16px rgba(240,181,106,0.45);
-  font-variant-numeric: tabular-nums;
-}
-#keypad-status { min-height: 15px; font-size: 12px; color: #ff6b6b; margin-bottom: 8px; }
-#keypad-status.ok { color: var(--green); }
-.keypad-hint { font-size: 11px; color: #66717c; }
+#mp-roster li.mp-host { border-color: rgba(127,240,176,0.42); color: #7ff0b0; }
+#mp-roster li.mp-empty { color: #7f93a3; }
