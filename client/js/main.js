@@ -316,7 +316,7 @@ function startGame() {
   ui.toggleMinimap(false);
   ui.setFlashlight(true);
   ui.setHp(player.hp, player.maxHp);
-  ui.setObjective(`차단기 ${FUSE_TOTAL}개를 찾아 전원을 복구하세요`, 0, FUSE_TOTAL, null);
+  ui.setObjective(`차단기 ${FUSE_TOTAL}개 + 부가 미션 ${world.missionSpots.length}개를 모두 완수하세요`, 0, FUSE_TOTAL, null);
   ui.toast(`[${DIFFICULTY[settings.difficulty]?.label || "보통"}] 괴물이 너의 숨을 느꼈다. 조용히 움직여라.`, 3400);
   if (settings.difficulty === "nightmare") {
     ui.toast("악몽: 지도 없음 · 충전소 없음 · 괴물 2마리 — 손전등이 소진되면 영구 고장", 4200);
@@ -423,7 +423,7 @@ function finishScare() {
   clearEffects();
   document.getElementById("stat-time").textContent = formatTime(game.elapsed);
   document.getElementById("stat-fuse").textContent = `${game.collected}/${FUSE_TOTAL}`;
-  document.getElementById("stat-missions").textContent = `${missionDoneCount()}/6`;
+  document.getElementById("stat-missions").textContent = `${missionDoneCount()}/${(world.missionSpots || []).length}`;
   ui.show(ui.death);
 }
 
@@ -442,7 +442,7 @@ function winGame() {
   unlockPointer();
   document.getElementById("win-time").textContent = formatTime(game.elapsed);
   document.getElementById("win-noise").textContent = noise.loudCount || 0;
-  document.getElementById("win-missions").textContent = `${missionDoneCount()}/6`;
+  document.getElementById("win-missions").textContent = `${missionDoneCount()}/${(world.missionSpots || []).length}`;
   ui.show(ui.win);
   ui.setHudVisible(false);
 }
@@ -523,7 +523,9 @@ function updateObjectives(dt) {
   }
   if (ms && msD < CONFIG.interaction.pickupRange) {
     target = { type: "mission", mission: ms };
-    label = ms.kind === "scout" ? "관측 지점 기록" : "현장 테이프 회수";
+    label = ms.kind === "scout" ? "관측 지점 기록"
+      : ms.kind === "beacon" ? "경보 비콘 정지"
+      : "현장 테이프 회수";
   }
 
   // 서랍 (닫힘→열기 / 열림+아이템→줍기 / 열림+빈 or 획득완료→닫기)
@@ -640,7 +642,7 @@ function updateObjectives(dt) {
   if (game.exitPowered) {
     ui.setObjective("격리 철문으로 탈출하라", game.collected, FUSE_TOTAL, null);
   } else {
-    ui.setObjective(`차단기 ${FUSE_TOTAL}개를 찾아 전원을 복구하세요`, game.collected, FUSE_TOTAL, nearest ? nd : null);
+    ui.setObjective(`차단기 ${FUSE_TOTAL} + 부가 미션 전부를 완수해야 철문이 열린다`, game.collected, FUSE_TOTAL, nearest ? nd : null);
   }
 
   syncMissionHud();
@@ -648,21 +650,49 @@ function updateObjectives(dt) {
 
 let missionHudCache = "";
 function syncMissionHud() {
-  const elS = document.getElementById("mis-scout");
-  const elT = document.getElementById("mis-tape");
-  if (!elS || !elT) return;
   const spots = world.missionSpots || [];
-  const a = spots.filter(s => s.kind === "scout" && s.done).length;
-  const b = spots.filter(s => s.kind === "tape" && s.done).length;
-  const key = a + "/" + b;
+  const kinds = ["scout", "tape", "beacon"];
+  const els = { scout: "mis-scout", tape: "mis-tape", beacon: "mis-beacon" };
+  let key = "";
+  const texts = {};
+  for (const k of kinds) {
+    const total = spots.filter(s => s.kind === k).length;
+    const done = spots.filter(s => s.kind === k && s.done).length;
+    texts[k] = done + "/" + total;
+    key += k + texts[k] + ";";
+  }
   if (key === missionHudCache) return;
   missionHudCache = key;
-  elS.textContent = a + "/3";
-  elT.textContent = b + "/3";
+  for (const k of kinds) {
+    const el = document.getElementById(els[k]);
+    if (el) el.textContent = texts[k];
+  }
 }
 
 function missionDoneCount() {
   return (world.missionSpots || []).filter(s => s.done).length;
+}
+
+function missionsAllDone() {
+  const spots = world.missionSpots || [];
+  return spots.length > 0 && spots.every(s => s.done);
+}
+
+// 탈출 조건: 퓨즈 전부 + 부가 미션 전부 → 격리 철문 개방
+function updateExitPower() {
+  if (game.exitPowered) return;
+  const fuseDone = game.collected >= FUSE_TOTAL;
+  const misDone = missionsAllDone();
+  if (fuseDone && misDone) {
+    game.exitPowered = true;
+    world.setExitPowered(true);
+    ui.toast("전원 복구 + 부가 미션 완수 — 격리 철문의 잠금이 풀렸다", 4000);
+    ui.setObjective("격리 철문으로 탈출하라", game.collected, FUSE_TOTAL, null);
+  } else if (fuseDone) {
+    ui.toast("차단기 전부 재기동 — 부가 미션도 모두 완수해야 격리 철문이 열린다", 3400);
+  } else if (misDone) {
+    ui.toast("부가 미션 완료 — 남은 차단기를 찾아 전원을 복구하라", 3000);
+  }
 }
 
 function handleMission(spot) {
@@ -674,12 +704,18 @@ function handleMission(spot) {
     noise.addImpulse(0.5, spot.x, spot.z, "scout");
     ui.toast("관측 기록 완료 — 기계음이 울렸다", 2600);
     audio.blip(1100, 0.18);
+  } else if (spot.kind === "beacon") {
+    // 경보 비콘 정지 — 사이렌이 잠깐 울리고 잠잠해진다
+    noise.addImpulse(0.4, spot.x, spot.z, "alarm");
+    ui.toast("경보기 정지 — 사이렌이 잠잠해졌다", 2400);
+    audio.blip(560, 0.2);
   } else {
     noise.addImpulse(0.2, spot.x, spot.z, "search");
     ui.toast("현장 테이프 회수 — 숫자키로 다시 듣기", 2400);
     audio.blip(980, 0.14);
   }
   syncMissionHud();
+  updateExitPower();
 }
 
 function collectFuse(f) {
@@ -689,14 +725,8 @@ function collectFuse(f) {
   game.collected++;
   audio.blip(1040, 0.16);
   noise.addImpulse(0.2, player.x, player.z, "pickup");
-  if (game.collected >= FUSE_TOTAL) {
-    game.exitPowered = true;
-    world.setExitPowered(true);
-    ui.toast("전원 복구 — 격리 철문의 잠금이 풀렸다", 3600);
-    ui.setObjective("격리 철문으로 탈출하라", game.collected, FUSE_TOTAL, null);
-  } else {
-    ui.toast(`차단기 ${game.collected}/${FUSE_TOTAL} 재기동`, 1600);
-  }
+  ui.toast(`차단기 ${game.collected}/${FUSE_TOTAL} 재기동`, 1600);
+  updateExitPower();
 }
 
 let eKeyDown = false;
@@ -1274,6 +1304,6 @@ ui.setFlashlight(true);
 ui.setHudVisible(false);
 
 // 디버그/테스트용 훅
-window.__silence = { game, player, monster, get monster2() { return monster2; }, get monster2Active() { return monster2Active; }, startGame, noise, world, ui, settings, STATE, input, audio, renderer, camera, scene, THREE, DIFFICULTY, CONFIG, applyDifficulty, smokes, decoys, primaryAction, handleDigit, stowHeld, equipSlot, useSlot };
+window.__silence = { game, player, monster, get monster2() { return monster2; }, get monster2Active() { return monster2Active; }, startGame, noise, world, ui, settings, STATE, input, audio, renderer, camera, scene, THREE, DIFFICULTY, CONFIG, applyDifficulty, smokes, decoys, primaryAction, handleDigit, stowHeld, equipSlot, useSlot, updateExitPower, missionsAllDone, missionDoneCount };
 
 loop();

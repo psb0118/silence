@@ -1,5 +1,5 @@
 export const CONFIG = {
-  worldRadius: 64,
+  worldRadius: 100,   // 확장 시설 모서리(±66,-70)가 원 안에 들어오도록 여유
   eyeHeight: 1.68,
   crouchEye: 1.05,
   hideEye: 1.18,
@@ -26,13 +26,13 @@ export const CONFIG = {
     low: 0.25          // 위험 표시 임계
   },
 
-  // 손전등 배터리
+  // 손전등 배터리 (용량 20% 인상: 100 → 120)
   battery: {
-    max: 100,
-    drain: 1.5,        // 켜져 있을 때 초당 소모 (약 66초)
+    max: 120,
+    drain: 1.5,        // 켜져 있을 때 초당 소모 (약 80초)
     charge: 24,        // 안전지대 충전 속도 (초당)
-    minOn: 8,          // 이 이하로 떨어지면 다시 켤 수 없음
-    low: 22            // 경고 임계
+    minOn: 10,         // 이 이하로 떨어지면 다시 켤 수 없음
+    low: 26            // 경고 임계
   },
 
   // 노이즈 세기 (0..1)
@@ -97,7 +97,7 @@ export const CONFIG = {
     repathInterval: 0.30,
     repathIntervalChase: 0.15,   // 추격 중에는 더 자주 재경로 (walls·모서리에서 끊김 방지)
     roamMin: 6,           // 배회 목표 최소 거리 (활동 반경 하단)
-    roamMax: 54,          // 배회 목표 최대 거리 (활동 반경 상단)
+    roamMax: 78,          // 배회 목표 최대 거리 (활동 반경 상단 — 확장된 시설 전체 순찰)
 
     blind: false,         // 악몽: 시각 인식 완전 차단 — 오직 소리로만 추적
     hideKnownChance: null, // 악몽: 들켜도 숨은 뒤 추적당할 확률 (null = 항상 추적)
@@ -146,9 +146,9 @@ export const CONFIG = {
 };
 
 export const QUALITY = {
-  low:    { grass: 6000,  pixelRatio: 1.0, shadows: false, grassRadius: 42 },
-  medium: { grass: 12000, pixelRatio: 1.0, shadows: true,  grassRadius: 50 },
-  high:   { grass: 20000, pixelRatio: 1.5, shadows: true,  grassRadius: 58 }
+  low:    { grass: 6000,  pixelRatio: 1.0, shadows: false, grassRadius: 66 },
+  medium: { grass: 12000, pixelRatio: 1.0, shadows: true,  grassRadius: 74 },
+  high:   { grass: 20000, pixelRatio: 1.5, shadows: true,  grassRadius: 82 }
 };
 
 // 난이도 프리셋 — startGame()에서 CONFIG.monster/stamina/battery/assist 를 덮어쓴다.
@@ -222,7 +222,7 @@ export const DIFFICULTY = {
     monster: {
       // 활동 반경 대폭 확대 — 시설 전역을 멀리서부터 배회
       roamMin: 20,
-      roamMax: 58,
+      roamMax: 86,
       chaseSpeed: 7.0,
       investigateSpeed: 5.6,
       stalkSpeed: 4.0,

@@ -9,9 +9,9 @@ import { rand, makeRng, clamp, dist2 } from "./util.js";
  *  - 시설은 스파인 복도 + 6개의 개성 있는 방으로 구성, 은신처/충전소/랜드마크 포함
  */
 
-// 구역 좌표 (오픈 에어 시설)
+// 구역 좌표 (오픈 에어 시설 — 확장판: 방 구조는 동일, 외곽 4면 마당 추가)
 const C = {
-  OX0: -46, OX1: 46, OZ0: -50, OZ1: 18,   // 외곽
+  OX0: -66, OX1: 66, OZ0: -70, OZ1: 34,   // 외곽 (서쪽·동쪽·북쪽·남쪽 마당 포함)
   spineN: -4, spineS: 2,                    // 복도 벽 (z)
   wallH: 4.4, wallT: 0.45,                  // 점프 눈 apex 2.672·머리 높이 위로 확실히 (눈 위 엿보기 차단)
   headBottom: 3.2,                          // 문 상단 린텔 하단 (머리 높이보다 높게)
@@ -320,7 +320,7 @@ export class World {
 
     for (let i = 0; i < N; i++) {
       const a = rng() * Math.PI * 2;
-      const r = 14 + rng() * 48;
+      const r = 14 + rng() * 70;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
       if (Math.hypot(x, z) < 8) continue;
@@ -349,7 +349,7 @@ export class World {
 
     for (let i = 0; i < 34; i++) {
       const a = rng() * Math.PI * 2;
-      const r = 8 + rng() * 50;
+      const r = 8 + rng() * 76;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
       if (this.inCompound(x, z) || this.inSafeZone(x, z)) continue;
@@ -555,9 +555,34 @@ export class World {
       { x: 30, z: 10, w: 32, d: 16, name: "창고" }
     ];
 
-    // ---- 물탱크 / 안테나 (외부 랜드마크) ----
-    this._waterTower(38, 34);
-    this._antenna(-40, 30);
+    // ---- 물탱크 / 안테나 (마당 랜드마크) ----
+    this._waterTower(50, 24);
+    this._antenna(-50, 24);
+
+    // ---- 외곽 마당 (확장 구역): 은신·탐색용 크레이트 + 조명 ----
+    this._buildYards();
+  }
+
+  /* ---------- 외곽 마당 (확장 구역) ---------- */
+  _buildYards() {
+    // 마당 조명 (탐색용 랜드마크)
+    this._lamp(-20, -60, 0xffa040, 11, 17);   // 북마당 서쪽
+    this._lamp(20, -60, 0xffa040, 11, 17);    // 북마당 동쪽
+    this._lamp(-58, -10, 0x9fd0ff, 11, 17);   // 서마당
+    this._lamp(58, -10, 0x9fd0ff, 11, 17);    // 동마당
+    this._lamp(0, 26, 0xffd9a0, 12, 18);      // 남마당 (입구 통로)
+
+    // 크레이트 (이동 커버 — 괴물 LOS는 벽 기준이라 시야 차단 아님, 그냥 은폐·회피용)
+    const crates = [
+      [-34, -54, 1.2], [34, -54, 1.2], [-10, -66, 0.9], [12, -66, 1.0],   // 북마당
+      [-58, -34, 1.1], [-54, -6, 1.0],                                    // 서마당
+      [56, -34, 1.1], [54, 0, 1.0], [56, 14, 1.2],                        // 동마당
+      [-12, 28, 1.0], [14, 30, 1.1], [-8, 22, 0.9]                        // 남마당 (입구 통로 x±4 우회)
+    ];
+    for (const [x, z, s] of crates) {
+      if (this.isBlockedPoint(x, z, s * 0.5 + 0.2)) continue;
+      this._crate(x, z, s, this.woodMat);
+    }
   }
 
   /* ---------- 벽/지붕/조명 헬퍼 ---------- */
@@ -984,18 +1009,29 @@ export class World {
   }
 
   /* ---------- 서랍 / 잠긴 문 / 전리품 ---------- */
-  // 부가 미션 지점 (전 난이도 공통 · 탈출 조건 아님 — 보너스 목표)
-  // 관측 기록대 3곳: E 홀드로 기록 (작동음 소음 발생 — 긴장감)
-  // 현장 테이프 3개: E 홀드로 회수
+  // 부가 미션 (전 난이도 공통 · 탈출 조건 = 퓨즈 전부 + 미션 전부)
+  // 관측 기록대 5곳: E 홀드로 기록 (작동음 소음 발생 — 긴장감)
+  // 현장 테이프 5개: E 홀드로 회수
+  // 경보 비콘 3기: E 홀드로 정지 (사이렌 소음 0.4)
   _buildMissions() {
     this.missionSpots = [];
     const cands = [
+      // 관측 기록대 (5)
       { kind: "scout", x: -6, z: -38 },   // R1 창고 근처
       { kind: "scout", x: 38, z: -34 },   // R3 사무실 근처
       { kind: "scout", x: -38, z: 12 },   // R7 숙소 근처
+      { kind: "scout", x: -20, z: -58 },  // 북마당 서쪽
+      { kind: "scout", x: 20, z: -58 },   // 북마당 동쪽
+      // 현장 테이프 (5)
       { kind: "tape", x: 8, z: -38 },     // R2 기계실
       { kind: "tape", x: 40, z: -12 },    // R6 저장고
-      { kind: "tape", x: 20, z: -28 }     // 동쪽 복도
+      { kind: "tape", x: 20, z: -28 },    // 동쪽 복도
+      { kind: "tape", x: -56, z: -20 },   // 서마당
+      { kind: "tape", x: 56, z: -20 },    // 동마당
+      // 경보 비콘 (3)
+      { kind: "beacon", x: -45, z: -60 }, // 북마당 구석
+      { kind: "beacon", x: -58, z: 8 },   // 서마당 남쪽
+      { kind: "beacon", x: 0, z: 26 }     // 남마당 (입구 통로)
     ];
     for (const cand of cands) {
       let x = cand.x, z = cand.z;
@@ -1017,6 +1053,21 @@ export class World {
         lamp.material.fog = false;
         lamp.position.y = 0.95;
         g.add(post, lamp);
+      } else if (cand.kind === "beacon") {
+        // 경보 비콘 — 붉은 원통 + 발광 파이어볼 (E 홀드로 정지)
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 1.1, 8),
+          new THREE.MeshStandardMaterial({ color: 0x4a3236, roughness: 0.55, metalness: 0.5 }));
+        post.position.y = 0.55;
+        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8),
+          new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0xcc1111, emissiveIntensity: 3.0 }));
+        bulb.material.fog = false;
+        bulb.position.y = 1.18;
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.03, 6, 14),
+          new THREE.MeshStandardMaterial({ color: 0x662222, emissive: 0x881111, emissiveIntensity: 1.2 }));
+        ring.material.fog = false;
+        ring.rotation.x = Math.PI / 2;
+        ring.position.y = 0.06;
+        g.add(post, bulb, ring);
       } else {
         const box = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 0.16),
           new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.55 }));
@@ -1062,6 +1113,12 @@ export class World {
     this._drawer(-8, -20, 0, "smoke", "연막탄");                   // R4 통신실
     this._drawer(34, -36, 0, "note_power", "작업 일지");           // R3 사무실 — 목표 단서
     this._drawer(30, 14, 0, "medkit", "구급상자");                 // R9 잠긴 창고 내부
+
+    // 외곽 마당 (확장 구역) 서랍
+    this._drawer(-45, -56, 0, "battery", "예비 배터리");           // 북마당 서쪽
+    this._drawer(45, -56, 0, "medkit", "구급상자");                // 북마당 동쪽
+    this._drawer(-56, 20, 0, "battery", "예비 배터리");            // 서마당 남쪽
+    this._drawer(56, 20, 0, "medkit", "구급상자");                 // 동마당 남쪽
 
     // 잠긴 문: 각각 고유 열쇠 필요 (범용 열쇠 아님)
     this._lockedDoor(30, 0, "x", 4.0, "key_shed", "잠긴 창고 문", "4812");
@@ -1216,7 +1273,7 @@ export class World {
 
   /* ---------- 출구 철문 ---------- */
   _buildGate() {
-    const gx = 0, gz = -60;
+    const gx = 0, gz = -80;   // 북마당 끝 (외곽 벽 z=-70에서 10m 북쪽)
     const gy = this.heightAt(gx, gz);
     const metalMat = new THREE.MeshStandardMaterial({ color: 0x3a4048, roughness: 0.5, metalness: 0.75 });
 

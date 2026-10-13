@@ -273,6 +273,7 @@ html, body {
 }
 .mis-key.scout { background: rgba(90,208,255,0.16); color: #5ad0ff; }
 .mis-key.tape { background: rgba(255,179,71,0.16); color: #ffb347; }
+.mis-key.beacon { background: rgba(255,80,80,0.16); color: #ff6a6a; }
 
 /* ================= 오버레이 ================= */
 /* overflow 안전 중앙정렬: 내용이 화면보다 크면 위아래 모두 스크롤로 접근 가능 */

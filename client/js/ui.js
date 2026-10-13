@@ -198,7 +198,8 @@ export class UI {
     const w = this._w, p = this._p, m = this._m, c = this.minimapCtx;
     if (!c || !this.minimap || !w || !p) return;
     const W = this.minimap.width, H = this.minimap.height, PAD = 14;
-    const X0 = -50, X1 = 53, Z0 = -56, Z1 = 50;
+    // 확장된 시설 전체를 담는 경계 (게이트 북쪽 포함)
+    const X0 = -70, X1 = 70, Z0 = -84, Z1 = 54;
     const sx = (W - PAD * 2) / (X1 - X0);
     const sy = (H - PAD * 2) / (Z1 - Z0);
     const mx = (x) => PAD + (x - X0) * sx;
@@ -210,10 +211,18 @@ export class UI {
     c.strokeStyle = "#2a3f55"; c.lineWidth = 1;
     c.strokeRect(0.5, 0.5, W - 1, H - 1);
 
+    // 맵 구조만 표시: 외곽 마당 밴드 + 방 + 벽 + 플레이어
+    // (아이템·미션·괴물·출구 등은 표시하지 않는다 — 명세: 자신의 모습과 맵의 구조만)
+
+    // 시설 외곽(마당) 영역
+    c.fillStyle = "rgba(50,70,92,0.14)";
+    c.fillRect(mx(w.compound.OX0), mz(w.compound.OZ0),
+      mx(w.compound.OX1) - mx(w.compound.OX0), mz(w.compound.OZ1) - mz(w.compound.OZ0));
+
     // 동서 복도 밴드 (개방 구역)
     c.fillStyle = "rgba(84,116,150,0.10)";
-    c.fillRect(mx(-46), mz(-30), mx(46) - mx(-46), mz(-26) - mz(-30));
-    c.fillRect(mx(-46), mz(-4), mx(46) - mx(-46), mz(0) - mz(-4));
+    c.fillRect(mx(w.compound.OX0), mz(-30), mx(w.compound.OX1) - mx(w.compound.OX0), mz(-26) - mz(-30));
+    c.fillRect(mx(w.compound.OX0), mz(-4), mx(w.compound.OX1) - mx(w.compound.OX0), mz(0) - mz(-4));
 
     // 방
     if (w.rooms) for (const r of w.rooms) {
@@ -233,58 +242,6 @@ export class UI {
     }
     c.stroke();
 
-    // 안전지대(대피소) 영역
-    c.fillStyle = "#41ff9e"; c.globalAlpha = 0.25;
-    c.fillRect(mx(-4.5), mz(40.5), mx(4.5) - mx(-4.5), mz(47.5) - mz(40.5));
-    c.globalAlpha = 1;
-    // 충전소
-    const chg = w.chargeStation;
-    if (chg) {
-      c.fillStyle = "#ffd23c";
-      c.beginPath(); c.arc(mx(chg.x), mz(chg.z), 3.5, 0, Math.PI * 2); c.fill();
-    }
-    // 출구
-    if (w.exit) {
-      c.strokeStyle = "#41ff9e"; c.lineWidth = 2.5;
-      c.strokeRect(mx(w.exit.x) - 5, mz(w.exit.z) - 5, 10, 10);
-    }
-
-    // 잠긴 문 (열린 문은 회색으로)
-    if (w.lockedDoors) for (const d of w.lockedDoors) {
-      const x0 = d.axis === "x" ? d.x - d.width / 2 : d.x, x1 = d.axis === "x" ? d.x + d.width / 2 : d.x;
-      const z0 = d.axis === "z" ? d.z - d.width / 2 : d.z, z1 = d.axis === "z" ? d.z + d.width / 2 : d.z;
-      c.strokeStyle = d.open ? "rgba(120,140,160,0.5)" : "#ff5740";
-      c.lineWidth = 2.5;
-      c.beginPath(); c.moveTo(mx(x0), mz(z0)); c.lineTo(mx(x1), mz(z1)); c.stroke();
-      c.fillStyle = d.open ? "rgba(120,140,160,0.5)" : "#ff5740";
-      c.beginPath(); c.arc(mx(d.x), mz(d.z), 2.4, 0, Math.PI * 2); c.fill();
-    }
-
-    // 차단기
-    if (w.fuses) for (const f of w.fuses) {
-      c.shadowBlur = 0;
-      c.fillStyle = f.collected ? "rgba(56,255,208,0.22)" : "#38ffd0";
-      if (!f.collected) c.shadowColor = "#38ffd0", c.shadowBlur = 5;
-      c.beginPath(); c.arc(mx(f.x), mz(f.z), f.collected ? 2 : 2.8, 0, Math.PI * 2); c.fill();
-      c.shadowBlur = 0;
-    }
-
-    // 서랍 (획득 완료 여부 기준)
-    if (w.drawers) for (const d of w.drawers) {
-      c.fillStyle = d.looted ? "rgba(120,140,160,0.30)" : (d.lootId ? "#ffb347" : "#8b97a5");
-      c.fillRect(mx(d.x) - 2, mz(d.z) - 2, 4, 4);
-    }
-
-    // 부가 미션 지점 (관측=파랑, 테이프=주황, 완료=회색)
-    if (w.missionSpots) for (const s of w.missionSpots) {
-      c.fillStyle = s.done ? "rgba(120,140,160,0.28)" : (s.kind === "scout" ? "#5ad0ff" : "#ffb347");
-      if (!s.done) { c.shadowColor = c.fillStyle; c.shadowBlur = 4; }
-      c.beginPath(); c.arc(mx(s.x), mz(s.z), s.done ? 2 : 2.8, 0, Math.PI * 2); c.fill();
-      c.shadowBlur = 0;
-    }
-
-    // 괴물 위치는 지도에 표시하지 않는다 (명세: 미니맵에 몬스터 표시 금지)
-
     // 플레이어 (전방 화살표)
     if (p) {
       const cxp = mx(p.x), czp = mz(p.z);
@@ -298,8 +255,7 @@ export class UI {
 
     // 북쪽 + 범례
     c.fillStyle = "#6b8ba6"; c.font = "9px sans-serif";
-    c.fillText("N", mx(0) - 3, mz(-50) - 5);
-    c.fillText("출구", mx(0) - 13, mz(-50) + 21);
+    c.fillText("N", mx(0) - 3, mz(w.compound.OZ0) - 5);
     c.fillStyle = "#4a6b86";
     c.fillText("M - 닫기", W - 58, H - 8);
   }
