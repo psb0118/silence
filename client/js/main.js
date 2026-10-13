@@ -510,9 +510,21 @@ function updateObjectives(dt) {
     if (d < nd) { nd = d; nearest = f; }
   }
 
-  // 상호작용 대상 — 우선순위(높을수록 나중에 덮어씀): 서랍 < 은신처 < 잠긴 문 < 부가 미션 < 퓨즈(목표물) < 게이트
+  // 상호작용 대상 — 우선순위(높을수록 나중에 덮어씀): 부가 미션 < 서랍 < 은신처 < 잠긴 문 < 퓨즈(목표물) < 게이트
   let target = null;
   let label = "";
+
+  // 부가 미션 지점 (관측 기록대 / 현장 테이프) — 보너스 목표라 서랍·은신처·퓨즈에 모두 밀림
+  let ms = null, msD = Infinity;
+  for (const s of world.missionSpots) {
+    if (s.done) continue;
+    const d = Math.hypot(s.x - player.x, s.z - player.z);
+    if (d < msD) { msD = d; ms = s; }
+  }
+  if (ms && msD < CONFIG.interaction.pickupRange) {
+    target = { type: "mission", mission: ms };
+    label = ms.kind === "scout" ? "관측 지점 기록" : "현장 테이프 회수";
+  }
 
   // 서랍 (닫힘→열기 / 열림+아이템→줍기 / 열림+빈 or 획득완료→닫기)
   let nearDrawer = null, drD = Infinity;
@@ -566,18 +578,6 @@ function updateObjectives(dt) {
     label = player.inventory.hasKey(nearDoor.keyId)
       ? `${nearDoor.label} 열기 (${keyName})`
       : `${nearDoor.label} — 잠김`;
-  }
-
-  // 부가 미션 지점 (관측 기록대 / 현장 테이프) — 퓨즈·게이트에는 밀림
-  let ms = null, msD = Infinity;
-  for (const s of world.missionSpots) {
-    if (s.done) continue;
-    const d = Math.hypot(s.x - player.x, s.z - player.z);
-    if (d < msD) { msD = d; ms = s; }
-  }
-  if (ms && msD < CONFIG.interaction.pickupRange) {
-    target = { type: "mission", mission: ms };
-    label = ms.kind === "scout" ? "관측 지점 기록" : "현장 테이프 회수";
   }
 
   // 퓨즈(목표물) — 은신처·잠긴 문이 겹쳐도 반드시 회수 가능해야 함
