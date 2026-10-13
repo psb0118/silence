@@ -903,7 +903,21 @@ function useSlot(i) {
     audio.blip(1320, 0.16);
     ui.toast("새 손전등으로 교체 — 배터리 100%", 1800);
   } else if (slot.id && slot.id.startsWith("key_")) {
-    ui.toast(`${def ? def.name : "열쇠"} — 잠긴 문 앞에서 E를 눌러 사용한다`, 2200);
+    // 열쇠는 소모품이 아니다 — 남은 잠긴 문까지의 거리·방향을 안내한다
+    const door = world.lockedDoors.find((d) => d.keyId === slot.id && !d.open);
+    if (!door) {
+      ui.toast(`${def ? def.name : "열쇠"} — 열 잠긴 문이 남아 있지 않다`, 2400);
+    } else {
+      const dx = door.x - player.x, dz = door.z - player.z;
+      const dist = Math.hypot(dx, dz) || 0.01;
+      const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
+      const dot = (dx / dist) * fx + (dz / dist) * fz;   // 1=정면, -1=정면 반대
+      const c = (dz * fx - dx * fz) / dist;              // >0 = 오른쪽
+      const side = Math.abs(c) < 0.35 ? "" : c > 0 ? " 오른쪽" : " 왼쪽";
+      const front = dot > 0.35 ? "앞" : dot < -0.35 ? "뒤" : "측면";
+      ui.toast(`${def ? def.name : "열쇠"} — ${door.label}: ${front}${side} 약 ${dist.toFixed(0)}m`, 3400);
+      audio.blip(880, 0.1);
+    }
   } else if (slot.id === "medkit") {
     if (player.hp >= player.maxHp) { ui.toast("체력이 이미 가득 찼습니다", 1600); return; }
     player.hp = Math.min(player.maxHp, player.hp + 1);
