@@ -421,7 +421,12 @@ export class Monster {
     // "들킨 상태"(목격/위치 인지 직후)였으면 → 은신처를 확실히 알고 끝까지 뒤져 찾는다.
     // 눈치채지 못하고 숨었으면 → knownHide가 비어 있어 조사해도 못 찾는다(못찾은 판정).
     if (player.hidden && (!this._wasHidden)) {
-      this.knownHide = this._hideKnowledge(player) ? player.hideSpot : null;
+      let spot = this._hideKnowledge(player) ? player.hideSpot : null;
+      // 악몽: 들켜도 숨은 뒤 확률적으로 놓친다 (hideKnownChance = 0.5 → 50:50)
+      if (spot && cfg.hideKnownChance != null && Math.random() >= cfg.hideKnownChance) {
+        spot = null;
+      }
+      this.knownHide = spot;
       if (this.knownHide) {
         const spot = player.hideSpot;
         this.seenHide = { spot, time: this.time };
