@@ -30,6 +30,7 @@ export class World {
     this.grassMaterials = [];
     this.fuses = [];
     this.hidingSpots = [];
+    this.missionSpots = [];   // 부가 미션: 관측 기록대 3 + 현장 테이프 3
     this.drawers = [];
     this.lockedDoors = [];
     this.lamps = [];
@@ -53,6 +54,7 @@ export class World {
     this._buildFog();
     this._buildFuses();
     this._buildDoorsAndLoot();
+    this._buildMissions();
     this._buildGate();
   }
 
@@ -982,6 +984,63 @@ export class World {
   }
 
   /* ---------- 서랍 / 잠긴 문 / 전리품 ---------- */
+  // 부가 미션 지점 (전 난이도 공통 · 탈출 조건 아님 — 보너스 목표)
+  // 관측 기록대 3곳: E 홀드로 기록 (작동음 소음 발생 — 긴장감)
+  // 현장 테이프 3개: E 홀드로 회수
+  _buildMissions() {
+    this.missionSpots = [];
+    const cands = [
+      { kind: "scout", x: -6, z: -38 },   // R1 창고 근처
+      { kind: "scout", x: 38, z: -34 },   // R3 사무실 근처
+      { kind: "scout", x: -38, z: 12 },   // R7 숙소 근처
+      { kind: "tape", x: 8, z: -38 },     // R2 기계실
+      { kind: "tape", x: 40, z: -12 },    // R6 저장고
+      { kind: "tape", x: 20, z: -28 }     // 동쪽 복도
+    ];
+    for (const cand of cands) {
+      let x = cand.x, z = cand.z;
+      // 차단 지점이면 결정적 나선 탐색으로 이동
+      for (let r = 1.5; r <= 6.1 && this.isBlockedPoint(x, z, 0.35); r += 1.5) {
+        const a = (r * 2.4 + this.missionSpots.length * 1.7) % (Math.PI * 2);
+        x = cand.x + Math.cos(a) * r;
+        z = cand.z + Math.sin(a) * r;
+      }
+      if (this.inSafeZone(x, z) || this.isBlockedPoint(x, z, 0.35)) continue;
+      const y = this.heightAt(x, z);
+      const g = new THREE.Group();
+      if (cand.kind === "scout") {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.9, 8),
+          new THREE.MeshStandardMaterial({ color: 0x3a4550, roughness: 0.6, metalness: 0.4 }));
+        post.position.y = 0.45;
+        const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8),
+          new THREE.MeshStandardMaterial({ color: 0x5ad0ff, emissive: 0x3399ff, emissiveIntensity: 2.2 }));
+        lamp.material.fog = false;
+        lamp.position.y = 0.95;
+        g.add(post, lamp);
+      } else {
+        const box = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 0.16),
+          new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.55 }));
+        box.position.y = 0.07;
+        const dot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6),
+          new THREE.MeshStandardMaterial({ color: 0xffb347, emissive: 0xff8800, emissiveIntensity: 2.5 }));
+        dot.material.fog = false;
+        dot.position.set(0, 0.16, 0.06);
+        g.add(box, dot);
+      }
+      g.position.set(x, y, z);
+      g.traverse(o => { o.castShadow = true; });
+      this.scene.add(g);
+      this.missionSpots.push({ kind: cand.kind, x, z, done: false, mesh: g });
+    }
+  }
+
+  resetMissions() {
+    for (const s of this.missionSpots) {
+      s.done = false;
+      if (s.mesh) s.mesh.visible = true;
+    }
+  }
+
   _buildDoorsAndLoot() {
     // 서랍: lootId는 Inventory ITEM id와 일치. 열기/닫기/획득은 독립 상태.
     // 1. 시작 대피소: 파란 창고 열쇠

@@ -298,6 +298,9 @@ function startGame() {
   player.inventory.clear();
   world.resetInteractive();
   world.setNightmareLoot(settings.difficulty === "nightmare");
+  world.resetMissions();
+  missionHudCache = "";
+  syncMissionHud();
   monster.rebuildGrid();
   ui.setInventory(player.inventory, -1);
   if (world.chargeStation) world.chargeStation.setActive(false);
@@ -420,6 +423,7 @@ function finishScare() {
   clearEffects();
   document.getElementById("stat-time").textContent = formatTime(game.elapsed);
   document.getElementById("stat-fuse").textContent = `${game.collected}/${FUSE_TOTAL}`;
+  document.getElementById("stat-missions").textContent = `${missionDoneCount()}/6`;
   ui.show(ui.death);
 }
 
@@ -438,6 +442,7 @@ function winGame() {
   unlockPointer();
   document.getElementById("win-time").textContent = formatTime(game.elapsed);
   document.getElementById("win-noise").textContent = noise.loudCount || 0;
+  document.getElementById("win-missions").textContent = `${missionDoneCount()}/6`;
   ui.show(ui.win);
   ui.setHudVisible(false);
 }
@@ -505,7 +510,7 @@ function updateObjectives(dt) {
     if (d < nd) { nd = d; nearest = f; }
   }
 
-  // 상호작용 대상 — 우선순위(높을수록 나중에 덮어씀): 서랍 < 은신처 < 잠긴 문 < 퓨즈(목표물) < 게이트
+  // 상호작용 대상 — 우선순위(높을수록 나중에 덮어씀): 서랍 < 은신처 < 잠긴 문 < 부가 미션 < 퓨즈(목표물) < 게이트
   let target = null;
   let label = "";
 
@@ -563,6 +568,18 @@ function updateObjectives(dt) {
       : `${nearDoor.label} — 잠김`;
   }
 
+  // 부가 미션 지점 (관측 기록대 / 현장 테이프) — 퓨즈·게이트에는 밀림
+  let ms = null, msD = Infinity;
+  for (const s of world.missionSpots) {
+    if (s.done) continue;
+    const d = Math.hypot(s.x - player.x, s.z - player.z);
+    if (d < msD) { msD = d; ms = s; }
+  }
+  if (ms && msD < CONFIG.interaction.pickupRange) {
+    target = { type: "mission", mission: ms };
+    label = ms.kind === "scout" ? "관측 지점 기록" : "현장 테이프 회수";
+  }
+
   // 퓨즈(목표물) — 은신처·잠긴 문이 겹쳐도 반드시 회수 가능해야 함
   if (nearest && nd < CONFIG.interaction.pickupRange) {
     target = { type: "fuse", fuse: nearest };
@@ -587,6 +604,7 @@ function updateObjectives(dt) {
       game.interactTarget.hide === target.hide &&
       game.interactTarget.drawer === target.drawer &&
       game.interactTarget.door === target.door &&
+      game.interactTarget.mission === target.mission &&
       game.interactTarget.phase === target.phase;
     if (!same) game.interactHold = 0;
     game.interactTarget = target;
@@ -595,6 +613,7 @@ function updateObjectives(dt) {
       : target.type === "hide" ? CONFIG.interaction.hideTime
       : target.type === "drawer" ? (target.phase === "take" ? 0.45 : 0.7)
       : target.type === "lockedDoor" ? 0.8
+      : target.type === "mission" ? 1.2
       : 1.4;
     game.interactHold += dt / time;
     if (game.interactHold >= 1) {
@@ -602,6 +621,7 @@ function updateObjectives(dt) {
       else if (target.type === "hide") { player.enterHide(target.hide); noise.drainEvents(); }
       else if (target.type === "drawer") handleDrawer(target.drawer, target.phase);
       else if (target.type === "lockedDoor") tryOpenDoor(target.door);
+      else if (target.type === "mission") handleMission(target.mission);
       else winGame();
       game.interactHold = 0;
       game.interactTarget = null;
@@ -622,6 +642,44 @@ function updateObjectives(dt) {
   } else {
     ui.setObjective(`차단기 ${FUSE_TOTAL}개를 찾아 전원을 복구하세요`, game.collected, FUSE_TOTAL, nearest ? nd : null);
   }
+
+  syncMissionHud();
+}
+
+let missionHudCache = "";
+function syncMissionHud() {
+  const elS = document.getElementById("mis-scout");
+  const elT = document.getElementById("mis-tape");
+  if (!elS || !elT) return;
+  const spots = world.missionSpots || [];
+  const a = spots.filter(s => s.kind === "scout" && s.done).length;
+  const b = spots.filter(s => s.kind === "tape" && s.done).length;
+  const key = a + "/" + b;
+  if (key === missionHudCache) return;
+  missionHudCache = key;
+  elS.textContent = a + "/3";
+  elT.textContent = b + "/3";
+}
+
+function missionDoneCount() {
+  return (world.missionSpots || []).filter(s => s.done).length;
+}
+
+function handleMission(spot) {
+  if (!spot || spot.done) return;
+  spot.done = true;
+  if (spot.mesh) spot.mesh.visible = false;
+  if (spot.kind === "scout") {
+    // 관측 기록기 — 기록 직후 작동음이 시설에 울려 퍼진다 (위험 요소)
+    noise.addImpulse(0.5, spot.x, spot.z, "scout");
+    ui.toast("관측 기록 완료 — 기계음이 울렸다", 2600);
+    audio.blip(1100, 0.18);
+  } else {
+    noise.addImpulse(0.2, spot.x, spot.z, "search");
+    ui.toast("현장 테이프 회수 — 숫자키로 다시 듣기", 2400);
+    audio.blip(980, 0.14);
+  }
+  syncMissionHud();
 }
 
 function collectFuse(f) {

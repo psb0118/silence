@@ -275,6 +275,14 @@ export class UI {
       c.fillRect(mx(d.x) - 2, mz(d.z) - 2, 4, 4);
     }
 
+    // 부가 미션 지점 (관측=파랑, 테이프=주황, 완료=회색)
+    if (w.missionSpots) for (const s of w.missionSpots) {
+      c.fillStyle = s.done ? "rgba(120,140,160,0.28)" : (s.kind === "scout" ? "#5ad0ff" : "#ffb347");
+      if (!s.done) { c.shadowColor = c.fillStyle; c.shadowBlur = 4; }
+      c.beginPath(); c.arc(mx(s.x), mz(s.z), s.done ? 2 : 2.8, 0, Math.PI * 2); c.fill();
+      c.shadowBlur = 0;
+    }
+
     // 괴물 위치는 지도에 표시하지 않는다 (명세: 미니맵에 몬스터 표시 금지)
 
     // 플레이어 (전방 화살표)

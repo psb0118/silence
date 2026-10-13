@@ -255,6 +255,25 @@ html, body {
   z-index: 15; pointer-events: none;
 }
 
+/* 부가 미션 HUD (관측 기록 · 현장 테이프) */
+#missions {
+  position: absolute; top: 150px; left: 20px;
+  background: rgba(8,14,20,0.72);
+  border: 1px solid #2a3f55; border-radius: 6px;
+  padding: 8px 10px; min-width: 148px;
+  z-index: 14; pointer-events: none;
+}
+.mis-row {
+  font-size: 12px; color: #9fb2c3; letter-spacing: .04em; line-height: 1.8;
+}
+.mis-row b { color: #e7edf3; margin-left: 4px; }
+.mis-key {
+  display: inline-block; padding: 0 5px; border-radius: 3px;
+  font-size: 10px; font-weight: 700; margin-right: 2px;
+}
+.mis-key.scout { background: rgba(90,208,255,0.16); color: #5ad0ff; }
+.mis-key.tape { background: rgba(255,179,71,0.16); color: #ffb347; }
+
 /* ================= 오버레이 ================= */
 /* overflow 안전 중앙정렬: 내용이 화면보다 크면 위아래 모두 스크롤로 접근 가능 */
 .overlay {
@@ -500,7 +519,7 @@ html, body {
 }
 
 
-/* ��й�ȣ Ű�е� (�Ǹ� ����) */
+/* ��й�ȣ Ű�е� (�Ǹ� ����) */
 #keypad-modal {
   position: fixed; inset: 0; z-index: 88;
   display: flex; align-items: center; justify-content: center;
