@@ -1005,8 +1005,8 @@ export class World {
     this._drawer(30, 14, 0, "medkit", "구급상자");                 // R9 잠긴 창고 내부
 
     // 잠긴 문: 각각 고유 열쇠 필요 (범용 열쇠 아님)
-    this._lockedDoor(30, 0, "x", 4.0, "key_shed", "잠긴 창고 문");
-    this._lockedDoor(30, -4, "x", 3.5, "key_store", "잠긴 저장고 문");
+    this._lockedDoor(30, 0, "x", 4.0, "key_shed", "잠긴 창고 문", "4812");
+    this._lockedDoor(30, -4, "x", 3.5, "key_store", "잠긴 저장고 문", "7306");
   }
 
   _drawer(x, z, yaw, lootId, lootName) {
@@ -1074,7 +1074,7 @@ export class World {
     return true;
   }
 
-  _lockedDoor(x, z, axis, width, keyId, label) {
+  _lockedDoor(x, z, axis, width, keyId, label, code) {
     const y = this.heightAt(x, z);
     const h = 3.2;                           // 린텔 하단(C.headBottom)까지 — 문 위 틈으로 안이 보이지 않게
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, h, 0.22),
@@ -1094,7 +1094,7 @@ export class World {
     const box = { minX: x - w / 2, maxX: x + w / 2, minZ: z - dd / 2, maxZ: z + dd / 2 };
     this.boxes.push(box);
 
-    const rec = { x, z, axis, width, mesh, box, indicator: ind, keyId, label, open: false };
+    const rec = { x, z, axis, width, mesh, box, indicator: ind, keyId, label, code: code || null, open: false, unlocked: false };
     this.lockedDoors.push(rec);
     return rec;
   }
@@ -1112,7 +1112,7 @@ export class World {
     return true;
   }
 
-  // 악몽: 예비 배터리 서랍을 야전 손전등(100% 충전)으로 교체 — 충전소가 없으므로
+  // 악몽: 예비 배터리 서랍 → 야전 손전등(100% 충전), 창고 단서 메모 → 비밀번호 단서
   setNightmareLoot(on) {
     for (const d of this.drawers) {
       if (d.lootBaseId === undefined) {
@@ -1122,6 +1122,9 @@ export class World {
       if (on && d.lootBaseId === "battery") {
         d.lootId = "flashlight";
         d.lootName = "야전 손전등";
+      } else if (on && d.lootBaseId === "note_shed") {
+        d.lootId = "note_code";
+        d.lootName = "새겨진 숫자";
       } else {
         d.lootId = d.lootBaseId;
         d.lootName = d.lootBaseName;
@@ -1138,6 +1141,7 @@ export class World {
       d.face.position.z = 0.28;
     }
     for (const door of this.lockedDoors) {
+      door.unlocked = false;
       if (door.open) {
         door.open = false;
         door.mesh.visible = true;

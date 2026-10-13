@@ -104,6 +104,8 @@ const game = {
   heldSlot: -1,      // 손에 들고 있는 소모품 슬롯 번호 (-1 = 맨손)
   noteEscapedAt: -1e9, // 메모 닫기 Esc 시각 (포인터 잠금 해제 재잠금용)
   relockT: null,
+  keypadDoor: null,   // 비밀번호 입력 중인 잠긴 문 (악몽 퍼즐)
+  keypadBuf: "",
   notesRead: {}   // 읽은 메모 id → true
 };
 const FUSE_TOTAL = world.fuses.length;
@@ -160,13 +162,23 @@ function onKey(e, down) {
         ui.hideInteract();
       }
       break;
-    case "Digit1": case "Digit2": case "Digit3": case "Digit4": case "Digit5":
+    case "Digit0": case "Digit1": case "Digit2": case "Digit3": case "Digit4": case "Digit5":
     case "Digit6": case "Digit7": case "Digit8": case "Digit9":
-      if (down && !e.repeat && game.phase === "playing") handleDigit(parseInt(c.slice(5), 10) - 1);
+      if (down && !e.repeat && game.phase === "playing") {
+        if (game.keypadDoor) keypadPress(c === "Digit0" ? 0 : parseInt(c.slice(5), 10));
+        else if (c !== "Digit0") handleDigit(parseInt(c.slice(5), 10) - 1);
+      }
+      break;
+    case "Enter":
+      if (down && !e.repeat && game.phase === "playing" && game.keypadDoor) submitKeypad();
       break;
     case "Escape":
+      if (!down) break; // keydown에서만 처리 (keyup 중복 방지)
+      // 키패드 입력 중이면 입력만 닫는다 (일시정지 아님)
+      if (game.keypadDoor) {
+        closeKeypad();
       // 메모(단서)가 떠 있으면 닫기만 하고 게임은 멈추지 않는다
-      if (ui.isNoteOpen()) {
+      } else if (ui.isNoteOpen()) {
         ui.hideNote();
         game.noteEscapedAt = performance.now();
       } else if (game.phase === "playing") pause();
@@ -260,6 +272,9 @@ function startGame() {
   game.lastMonsterState = STATE.ROAM;
   game.eConsumed = false;
   game.heldSlot = -1;
+  game.keypadDoor = null;
+  game.keypadBuf = "";
+  document.getElementById("keypad-modal").classList.add("hidden");
   showAlert(null);
   game.notesRead = {};
   ui.hideNote();
@@ -561,6 +576,9 @@ function updateObjectives(dt) {
     label = "철문 열고 탈출";
   }
 
+  // 키패드 입력 중에는 상호작용(프롬프트/홀드 E) 전부 차단
+  if (game.keypadDoor) target = null;
+
   const holdingE = !!eKeyDown && !game.eConsumed;
   if (target && holdingE) {
     const same = game.interactTarget &&
@@ -624,7 +642,16 @@ function collectFuse(f) {
 }
 
 let eKeyDown = false;
-document.addEventListener("keydown", (e) => { if (e.code === "KeyE") eKeyDown = true; });
+document.addEventListener("keydown", (e) => {
+  if (e.code === "KeyE") {
+    // 키패드 입력 중에는 E = 닫기 (상호작용으로 잡히지 않도록 차단)
+    if (game.keypadDoor) {
+      if (!e.repeat) closeKeypad();
+      return;
+    }
+    eKeyDown = true;
+  }
+});
 document.addEventListener("keyup", (e) => {
   if (e.code === "KeyE") { eKeyDown = false; game.eConsumed = false; } // 재누르면 다음 동작 허용
 });
@@ -673,10 +700,16 @@ function handleDrawer(d, phase) {
 /* ================= 잠긴 문 ================= */
 function tryOpenDoor(door) {
   if (!door || door.open) return;
+  if (game.keypadDoor) return; // 이미 비밀번호 입력 중
   if (!player.inventory.hasKey(door.keyId)) {
     const keyDef = getItemDef(door.keyId);
     ui.toast(`이 문에 맞는 열쇠가 필요하다. (${keyDef ? keyDef.name : "특정 열쇠"})`, 2400);
     audio.blip(240, 0.14);
+    return;
+  }
+  // 악몽: 열쇠만으로는 열리지 않는다 — 비밀번호 퍼즐 (단서: "새겨진 숫자" 메모)
+  if (settings.difficulty === "nightmare" && !door.unlocked) {
+    openKeypad(door);
     return;
   }
   // 열쇠는 소모하지 않음 — 문 개방만
@@ -687,6 +720,63 @@ function tryOpenDoor(door) {
   ui.setInventory(player.inventory);
   ui.toast(`${door.label} 잠금 해제`, 2000);
   audio.blip(660, 0.2);
+}
+
+/* ================= 비밀번호 키패드 (악몽 퍼즐) ================= */
+function openKeypad(door) {
+  game.keypadDoor = door;
+  game.keypadBuf = "";
+  updateKeypadDisplay(null, false);
+  document.getElementById("keypad-modal").classList.remove("hidden");
+  audio.blip(740, 0.12);
+  ui.toast("비밀번호 입력 — 숫자키 · Enter 확인 · Esc/E 취소", 3400);
+}
+function closeKeypad() {
+  if (!game.keypadDoor) return;
+  game.keypadDoor = null;
+  game.keypadBuf = "";
+  document.getElementById("keypad-modal").classList.add("hidden");
+}
+function keypadPress(n) {
+  if (!game.keypadDoor || game.keypadBuf.length >= 4) return;
+  game.keypadBuf += String(n);
+  audio.blip(840 + n * 40, 0.07);
+  updateKeypadDisplay(null, false);
+}
+function updateKeypadDisplay(status, ok) {
+  const disp = document.getElementById("keypad-display");
+  if (disp) {
+    const padded = game.keypadBuf.padEnd(4, "·");
+    disp.textContent = padded.split("").join(" ");
+  }
+  const st = document.getElementById("keypad-status");
+  if (st) {
+    st.textContent = status || "";
+    st.className = ok ? "ok" : "";
+  }
+}
+function submitKeypad() {
+  const door = game.keypadDoor;
+  if (!door) return;
+  if (game.keypadBuf.length < 4) {
+    updateKeypadDisplay("4자리를 입력하라", false);
+    audio.blip(300, 0.1);
+    return;
+  }
+  if (door.code && game.keypadBuf === door.code) {
+    door.unlocked = true;
+    closeKeypad();
+    tryOpenDoor(door); // 열쇠 검증 통과 → 개방까지 일괄 처리
+    updateKeypadDisplay(null, false);
+  } else {
+    // 오입력: 시간을 낭비하고 소음이 새어 괴물을 부른다
+    game.keypadBuf = "";
+    updateKeypadDisplay("코드 불일치 — 소리가 새어 나간다", false);
+    audio.blip(240, 0.18);
+    noise.addImpulse(0.8, player.x, player.z, "keypad");
+    showAlert("잘못된 코드 — 소리가 울렸다!", 2.8);
+    ui.toast("코드가 틀렸다 — 조용히 해라", 2400);
+  }
 }
 
 /* ================= 연막 / 소음장치 이펙트 ================= */
