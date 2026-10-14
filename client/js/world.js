@@ -56,6 +56,7 @@ export class World {
     this._buildDoorsAndLoot();
     this._buildGate();
     this._buildProps();
+    this._buildWeather();
   }
 
   /* ---------- 지형 높이 (결정적 함수) ---------- */
@@ -121,12 +122,50 @@ export class World {
     moon.position.set(-120, 120, -220);
     this.scene.add(moon);
     this.moonSprite = moon;
+
+    // 오로라 커튼 (3겹, 밤하늘을 가로지름)
+    this.auroras = [];
+    const aurTex = makeAuroraTexture();
+    const aurCols = [0x39ffc8, 0x4da6ff, 0xb46bff];
+    for (let i = 0; i < 3; i++) {
+      const m = new THREE.Mesh(
+        new THREE.PlaneGeometry(420, 60 + i * 22),
+        new THREE.MeshBasicMaterial({
+          map: aurTex, transparent: true, opacity: 0.16 - i * 0.03,
+          blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false,
+          color: aurCols[i]
+        })
+      );
+      const a = -0.5 + i * 0.55;
+      m.position.set(Math.cos(a) * 240, 150 + i * 26, Math.sin(a) * 240);
+      m.lookAt(0, 60, 0);
+      m.renderOrder = 1;
+      this.scene.add(m);
+      this.auroras.push({ mesh: m, phase: i * 2.1, speed: 0.05 + i * 0.02 });
+    }
+
+    // 지평선 산 실루엣 링
+    {
+      const mMat = new THREE.MeshBasicMaterial({ color: 0x0a1220, fog: false });
+      const rng = makeRng(4242);
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2 + rng() * 0.3;
+        const r = 200 + rng() * 60;
+        const h = 42 + rng() * 55;
+        const w = 60 + rng() * 70;
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(w / 2, h, 5), mMat);
+        cone.position.set(Math.cos(a) * r, h / 2 - 6, Math.sin(a) * r);
+        cone.rotation.y = rng() * Math.PI;
+        this.scene.add(cone);
+      }
+    }
   }
 
   /* ---------- 난이도별 무드 (조명/안개) ---------- */
   // 악몽: 손전등이 없으면 거의 완전한 암흑 — 달·별도 숨긴다
   setMood(nightmare) {
     if (!this.hemi) return;
+    this._nightmare = !!nightmare;
     if (nightmare) {
       this.hemi.intensity = 0.010;
       this.ambient.intensity = 0.003;
@@ -135,6 +174,9 @@ export class World {
       this.scene.background = new THREE.Color(0x010204);
       if (this.stars) this.stars.visible = false;
       if (this.moonSprite) this.moonSprite.visible = false;
+      if (this.auroras) for (const a of this.auroras) a.mesh.visible = false;
+      this._hemiBase = 0.010;
+      this._moonBase = 0.015;
     } else {
       this.hemi.intensity = 0.22;
       this.ambient.intensity = 0.06;
@@ -143,6 +185,9 @@ export class World {
       this.scene.background = new THREE.Color(0x070b12);
       if (this.stars) this.stars.visible = true;
       if (this.moonSprite) this.moonSprite.visible = true;
+      if (this.auroras) for (const a of this.auroras) a.mesh.visible = true;
+      this._hemiBase = 0.22;
+      this._moonBase = 0.32;
     }
   }
 
@@ -1429,6 +1474,18 @@ export class World {
     const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), this.exitIndicatorMat);
     lamp.position.set(gx + 2.2, gy + 4.3, gz);
     gate.add(lamp);
+    // 탈출구 간판 (전원에 따라 빨강→초록으로 다시 그림)
+    this._exitSignCanvas = document.createElement("canvas");
+    this._exitSignCanvas.width = 256; this._exitSignCanvas.height = 64;
+    this._exitSignTex = new THREE.CanvasTexture(this._exitSignCanvas);
+    this._exitSignTex.colorSpace = THREE.SRGBColorSpace;
+    this._drawExitSign(false);
+    const sign = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.0, 0.75),
+      new THREE.MeshBasicMaterial({ map: this._exitSignTex, transparent: true, fog: false })
+    );
+    sign.position.set(gx, gy + 4.65, gz + 0.16);
+    gate.add(sign);
     // 멀리서도 보이는 탈출 빔 기둥 (전원 전에는 붉고 희미, 전원 후 초록빛으로 타오름)
     this.exitBeamMat = new THREE.MeshBasicMaterial({
       color: 0xff4444, transparent: true, opacity: 0.10,
@@ -1552,11 +1609,31 @@ export class World {
     }
   }
 
+  _drawExitSign(powered) {
+    const c = this._exitSignCanvas;
+    if (!c) return;
+    const ctx = c.getContext("2d");
+    const col = powered ? "#39ff88" : "#ff4444";
+    ctx.clearRect(0, 0, 256, 64);
+    ctx.fillStyle = "rgba(4,6,10,0.85)";
+    ctx.fillRect(0, 0, 256, 64);
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 4;
+    ctx.strokeRect(4, 4, 248, 56);
+    ctx.fillStyle = col;
+    ctx.font = "bold 30px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("탈출구 EXIT", 128, 34);
+    if (this._exitSignTex) this._exitSignTex.needsUpdate = true;
+  }
+
   setExitPowered(powered) {
     if (powered) {
       this.exitIndicatorMat.color.setHex(0x66ff99);
       this.exitIndicatorMat.emissive.setHex(0x22cc66);
       this.exitIndicatorMat.emissiveIntensity = 2.0;
+      this._drawExitSign(true);
       if (this.gate && !this.gate.open) {
         this.gate.open = true;
         this.boxes = this.boxes.filter((b) => b !== this._gateDoorBox);
@@ -1566,6 +1643,7 @@ export class World {
       this.exitIndicatorMat.color.setHex(0xff5555);
       this.exitIndicatorMat.emissive.setHex(0x661111);
       this.exitIndicatorMat.emissiveIntensity = 1.2;
+      this._drawExitSign(false);
       // 게이트 닫기 복원 (이전에는 open 상태가 유지되어 재시작 시 문이 열려 있었음)
       if (this.gate && this.gate.open) {
         this.gate.open = false;
@@ -1663,8 +1741,7 @@ export class World {
       const base = powered ? 2.0 : 1.2;
       const rate = powered ? 6 : 2.2;
       this.exitIndicatorMat.emissiveIntensity = base * (0.75 + 0.25 * Math.sin(elapsed * rate));
-    }
-    // 탈출 빔 기둥: 전원에 따라 색·밝기 전환
+    }    // 탈출 빔 기둥: 전원에 따라 색·밝기 전환
     if (this.exitBeamMat) {
       const powered = !!(this.gate && this.gate.open);
       this.exitBeamMat.color.setHex(powered ? 0x44ff88 : 0xff4444);
@@ -1688,9 +1765,16 @@ export class World {
       p.needsUpdate = true;
       this.fireflies.material.opacity = 0.55 + 0.25 * Math.sin(elapsed * 1.3);
     }
+    // 오로라 커튼이 천천히 흐른다
+    if (this.auroras) {
+      for (const a of this.auroras) {
+        a.mesh.material.opacity = 0.10 + 0.07 * (0.5 + 0.5 * Math.sin(elapsed * a.speed * 3 + a.phase));
+        a.mesh.position.x += Math.sin(elapsed * a.speed + a.phase) * dt * 1.2;
+      }
+    }
+    // 램프 플리커 + 서랍 애니메이션
     const red = _RED;
     const dd = this.distress;
-    // 서랍 열기/닫기 애니메이션
     this._updateDrawers(dt);
     for (const l of this.lamps) {
       let distress = 0;
@@ -1712,6 +1796,72 @@ export class World {
         if (distress > 0.01) { cm.color.copy(l.color).lerp(red, 0.4 + 0.5 * distress); cm.opacity = 0.24 + 0.1 * Math.sin(elapsed * 27); }
         else { cm.color.copy(l.color); cm.opacity = 0.24; }
       }
+    }
+    // 비 + 번개
+    this._updateWeather(dt, elapsed);
+  }
+
+  _buildWeather() {
+    // 빗줄기 (원점 기준 160m 박스 — 전역을 커버, y 순환)
+    const N = 700;
+    const pos = new Float32Array(N * 3);
+    const rng = makeRng(9001);
+    for (let i = 0; i < N; i++) {
+      pos[i * 3] = (rng() - 0.5) * 160;
+      pos[i * 3 + 1] = rng() * 40;
+      pos[i * 3 + 2] = (rng() - 0.5) * 160;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.PointsMaterial({
+      color: 0x8fb4d8, size: 0.09, transparent: true, opacity: 0.5,
+      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
+    });
+    const rain = new THREE.Points(geo, mat);
+    rain.frustumCulled = false;
+    rain.renderOrder = 6;
+    this.scene.add(rain);
+    this.rain = rain;
+    this._bolt = 0;
+    this._boltSecond = 0;
+    this._boltNext = 9 + Math.random() * 14;
+    this._nightmare = false;
+    this._boltBg = new THREE.Color(0x4a5a78);
+  }
+
+  _updateWeather(dt, elapsed) {
+    if (this.rain) {
+      const p = this.rain.geometry.attributes.position;
+      const arr = p.array;
+      for (let i = 0; i < p.count; i++) {
+        arr[i * 3 + 1] -= dt * 26;
+        arr[i * 3] += dt * 2.2; // 바람
+        if (arr[i * 3 + 1] < 0) {
+          arr[i * 3 + 1] = 34 + Math.random() * 6;
+          arr[i * 3] = (Math.random() - 0.5) * 160;
+          arr[i * 3 + 2] = (Math.random() - 0.5) * 160;
+        }
+      }
+      p.needsUpdate = true;
+    }
+    // 번개: 랜덤 간격으로 밤을 찢는다 (빛만, 소리 없음) — 절대값 설정 (누적 금지)
+    this._boltNext -= dt;
+    if (this._boltNext <= 0) {
+      this._bolt = 0.22 + Math.random() * 0.15;
+      this._boltNext = 8 + Math.random() * 18;
+      if (Math.random() < 0.35) this._boltSecond = 0.5; // 겹번개 예고
+    }
+    if (this._boltSecond > 0) {
+      this._boltSecond -= dt;
+      if (this._boltSecond <= 0) this._bolt = 0.18;
+    }
+    const flash = this._bolt > 0 ? Math.max(0, this._bolt) * 14 : 0;
+    if (this._bolt > 0) this._bolt -= dt;
+    if (this.hemi) this.hemi.intensity = (this._hemiBase ?? 0.22) + flash * 0.35;
+    if (this.moonLight) this.moonLight.intensity = (this._moonBase ?? 0.32) + flash * 0.8;
+    if (this.scene.background && this.scene.background.isColor) {
+      this.scene.background.setHex(this._nightmare ? 0x010204 : 0x070b12);
+      if (flash > 0) this.scene.background.lerp(this._boltBg, Math.min(0.5, flash * 0.12));
     }
   }
 }
@@ -1864,6 +2014,28 @@ function makeWallTexture() {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.anisotropy = 4;
+  return tex;
+}
+
+function makeAuroraTexture() {
+  // 세로로 흐르는 커튼 줄무늬 (wavy bands)
+  const c = document.createElement("canvas");
+  c.width = 512; c.height = 128;
+  const ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, 512, 128);
+  for (let x = 0; x < 512; x += 3) {
+    const w = 0.5 + 0.5 * Math.sin(x * 0.045) * Math.sin(x * 0.013 + 2);
+    const h = 40 + 60 * w;
+    const g = ctx.createLinearGradient(0, 128, 0, 128 - h);
+    g.addColorStop(0, "rgba(255,255,255,0)");
+    g.addColorStop(0.55, `rgba(255,255,255,${0.25 + 0.5 * w})`);
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(x, 128 - h, 3, h);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   return tex;
 }
 
