@@ -105,6 +105,42 @@ export class Player {
     this.flashOn = true;
     this._flashTarget = 380.0;
     this.lens.material.color.setHex(0xfff2c4);
+
+    // 볼륨 라이트 콘 (먼지 낀 빛기둥 느낌) — 손전등과 함께 켜지고 꺼진다
+    const beamTex = (() => {
+      const c = document.createElement("canvas");
+      c.width = 4; c.height = 128;
+      const ctx = c.getContext("2d");
+      const g = ctx.createLinearGradient(0, 0, 0, 128);
+      g.addColorStop(0, "rgba(255,244,214,0.85)");
+      g.addColorStop(0.35, "rgba(255,244,214,0.28)");
+      g.addColorStop(1, "rgba(255,244,214,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 4, 128);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    })();
+    const beamLen = 7.5, beamRad = 2.1;
+    const beamGeo = new THREE.ConeGeometry(beamRad, beamLen, 20, 1, true);
+    beamGeo.rotateX(Math.PI / 2); // 꼭짓점이 카메라 쪽(+z)을 향하게
+    const beamMat = new THREE.MeshBasicMaterial({
+      map: beamTex, transparent: true, opacity: 0.10,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+      side: THREE.DoubleSide, fog: false
+    });
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.position.set(0, 0, -beamLen / 2 - 0.15);
+    beam.renderOrder = 5;
+    this.camera.add(beam);
+    this.beam = beam;
+  }
+
+  _updateBeam() {
+    if (!this.beam) return;
+    const k = this.spot.intensity / 380;
+    this.beam.visible = k > 0.02;
+    this.beam.material.opacity = 0.10 * k;
   }
 
   /* 손에 든 아이템 뷰모델 (숫자키로 꺼냈다가 같은 키로 사용) */
@@ -525,6 +561,7 @@ export class Player {
 
     const cur = this.spot.intensity;
     this.spot.intensity = damp(cur, this._flashTarget, 14, dt);
+    this._updateBeam();
     if (this.flashHand) {
       this.flashHand.position.x = 0.26 + bobX * 0.4;
       this.flashHand.position.y = -0.24 + bobY * 0.5;
@@ -594,6 +631,7 @@ export class Player {
 
     const cur = this.spot.intensity;
     this.spot.intensity = damp(cur, this._flashTarget, 14, dt);
+    this._updateBeam();
     if (this.flashHand) { this.flashHand.position.set(0.26, -0.24, -0.42); }
     if (this.heldRoot) { this.heldRoot.position.set(0.24, -0.26, -0.44); }
   }

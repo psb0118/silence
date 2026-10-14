@@ -1429,6 +1429,16 @@ export class World {
     const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), this.exitIndicatorMat);
     lamp.position.set(gx + 2.2, gy + 4.3, gz);
     gate.add(lamp);
+    // 멀리서도 보이는 탈출 빔 기둥 (전원 전에는 붉고 희미, 전원 후 초록빛으로 타오름)
+    this.exitBeamMat = new THREE.MeshBasicMaterial({
+      color: 0xff4444, transparent: true, opacity: 0.10,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false
+    });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.6, 42, 12, 1, true), this.exitBeamMat);
+    beam.position.set(gx, gy + 21, gz);
+    beam.renderOrder = 4;
+    this.scene.add(beam);
+    this.exitBeam = beam;
     gate.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
     this.scene.add(gate);
 
@@ -1490,6 +1500,56 @@ export class World {
     barrel(-20, -51.7); barrel(22, -51.7);
     crate(-8, -56, 1.2, 0.4); barrel(-10.2, -55.6);
     crate(9, -54, 1.1, -0.3);
+
+    // 통신 안테나 (남동쪽 랜드마크) + 항공 비콘
+    {
+      const ax = 30, az = 30, ay = this.heightAt(ax, az);
+      const g = new THREE.Group();
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.5, 17, 8), this.metalMat);
+      mast.position.y = 8.5;
+      const cross1 = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.18, 0.18), this.metalMat);
+      cross1.position.y = 13.5;
+      const cross2 = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 2.6), this.metalMat);
+      cross2.position.y = 11.2;
+      const dish = new THREE.Mesh(new THREE.SphereGeometry(0.9, 10, 8, 0, Math.PI * 2, 0, Math.PI / 3), this.rustMat);
+      dish.position.set(0.8, 9.4, 0); dish.rotation.z = -1.1;
+      this.antennaMat = new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0xff2222, emissiveIntensity: 0.3 });
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 10), this.antennaMat);
+      beacon.position.y = 17.2;
+      g.add(mast, cross1, cross2, dish, beacon);
+      g.position.set(ax, ay, az);
+      g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      this.scene.add(g);
+      this.circles.push({ x: ax, z: az, r: 0.9 });
+    }
+
+    // 반딧불 (숲 가장자리 drift)
+    {
+      const N = 130;
+      const pos = new Float32Array(N * 3);
+      const seed = new Float32Array(N);
+      const rng = makeRng(777);
+      for (let i = 0; i < N; i++) {
+        const a = rng() * Math.PI * 2;
+        const r = 12 + rng() * 46;
+        const x = Math.cos(a) * r, z = Math.sin(a) * r;
+        pos[i * 3] = x;
+        pos[i * 3 + 1] = this.heightAt(x, z) + 0.6 + rng() * 2.2;
+        pos[i * 3 + 2] = z;
+        seed[i] = rng();
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      const mat = new THREE.PointsMaterial({
+        color: 0xaaffcc, size: 0.14, transparent: true, opacity: 0.6,
+        blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
+      });
+      const pts = new THREE.Points(geo, mat);
+      pts.userData.seed = seed;
+      pts.frustumCulled = false;
+      this.scene.add(pts);
+      this.fireflies = pts;
+    }
   }
 
   setExitPowered(powered) {
@@ -1603,6 +1663,30 @@ export class World {
       const base = powered ? 2.0 : 1.2;
       const rate = powered ? 6 : 2.2;
       this.exitIndicatorMat.emissiveIntensity = base * (0.75 + 0.25 * Math.sin(elapsed * rate));
+    }
+    // 탈출 빔 기둥: 전원에 따라 색·밝기 전환
+    if (this.exitBeamMat) {
+      const powered = !!(this.gate && this.gate.open);
+      this.exitBeamMat.color.setHex(powered ? 0x44ff88 : 0xff4444);
+      this.exitBeamMat.opacity = (powered ? 0.22 : 0.08) * (0.8 + 0.2 * Math.sin(elapsed * (powered ? 5 : 1.6)));
+    }
+    // 안테나 항공 비콘 점멸
+    if (this.antennaMat) {
+      const b = (Math.sin(elapsed * 2.4) > 0.55) ? 3.2 : 0.25;
+      this.antennaMat.emissiveIntensity = b;
+    }
+    // 반딧불 drift
+    if (this.fireflies) {
+      const p = this.fireflies.geometry.attributes.position;
+      const seed = this.fireflies.userData.seed;
+      for (let i = 0; i < p.count; i++) {
+        const s = seed[i];
+        p.array[i * 3] += Math.sin(elapsed * 0.5 + s * 6.28) * dt * 0.6;
+        p.array[i * 3 + 1] += Math.cos(elapsed * 0.4 + s * 6.28) * dt * 0.35;
+        p.array[i * 3 + 2] += Math.cos(elapsed * 0.45 + s * 6.28) * dt * 0.6;
+      }
+      p.needsUpdate = true;
+      this.fireflies.material.opacity = 0.55 + 0.25 * Math.sin(elapsed * 1.3);
     }
     const red = _RED;
     const dd = this.distress;

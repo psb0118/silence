@@ -12,10 +12,11 @@ import { net } from "./net.js";
 
 /* ================= 설정 ================= */
 const settings = Object.assign(
-  { sensitivity: 1, invertY: false, volume: 0.8, micSens: 1, quality: "medium", difficulty: "normal" },
+  { sensitivity: 1, invertY: false, volume: 0.8, micSens: 1, quality: "medium", difficulty: "normal", fov: 80 },
   JSON.parse(localStorage.getItem("silence.settings") || "{}")
 );
 if (!DIFFICULTY[settings.difficulty]) settings.difficulty = "normal";
+if (typeof settings.fov !== "number" || settings.fov < 60 || settings.fov > 105) settings.fov = 80;
 function saveSettings() {
   localStorage.setItem("silence.settings", JSON.stringify(settings));
 }
@@ -67,8 +68,12 @@ window.addEventListener("error", (e) => showFatal((e.message || "오류") + "\n"
 window.addEventListener("unhandledrejection", (e) => showFatal("" + ((e.reason && e.reason.message) || e.reason || "알 수 없는 오류")));
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.05, 500);
+const camera = new THREE.PerspectiveCamera(settings.fov, window.innerWidth / window.innerHeight, 0.05, 500);
 scene.add(camera); // 손전등(SpotLight)이 카메라의 자식이므로 씬에 포함되어야 조명이 적용됨
+function applyFov() {
+  camera.fov = settings.fov;
+  camera.updateProjectionMatrix();
+}
 
 /* ================= 시스템 ================= */
 const world = new World(scene, settings.quality);
@@ -575,7 +580,9 @@ function onKey(e, down) {
         ui.hideNote();
         ui.toast("메모 닫힘 — 화면을 클릭해 계속", 2400);
       } else if (document.getElementById("mp") && !document.getElementById("mp").classList.contains("hidden") && game.phase === "menu") {
-        // 멀티 패널이 떠 있으면 ESC로 닫기 (방에 있으면 나가지는 않는다)
+        // 멀티 패널이 떠 있으면 ESC로 닫기. 로비에 들어간 상태였으면 방에서도 나간다
+        // (패널만 닫히고 방에 남으면 싱글 버튼이 계속 멀티 패널을 되열게 되는 함정 방지)
+        if (net.active && net.state === "lobby") net.leaveRoom();
         net.closePanel();
       } else if (game.phase === "playing") pause();
       break;
@@ -673,11 +680,11 @@ const runTimerEl = document.getElementById("run-timer");
 
 startBtn.addEventListener("click", () => {
   if (net.active && net.state === "lobby") {
-    ui.toast("방에 참가 중이다 — 멀티플레이 화면에서 나가거나 시작하라", 3200);
-    net.openPanel();
-    return;
-  }
-  if (net.active && net.state === "playing") {
+    // 로비에 남아있던 상태면 방에서 나오고 싱글로 시작한다 (멀티 패널 되열림 함정 방지)
+    net.leaveRoom();
+    net.closePanel();
+    ui.toast("방에서 나와 싱글로 시작한다", 2400);
+  } else if (net.active && net.state === "playing") {
     ui.toast("협동 게임이 진행 중이다 — 멀티플레이 화면을 확인해라", 3000);
     net.openPanel();
     return;
@@ -1839,6 +1846,8 @@ const setMicSens = document.getElementById("set-micsens");
 const setMicSensVal = document.getElementById("set-micsens-val");
 const setQuality = document.getElementById("set-quality");
 const setDifficulty = document.getElementById("set-difficulty");
+const setFov = document.getElementById("set-fov");
+const setFovVal = document.getElementById("set-fov-val");
 
 function syncSettingsUI() {
   setSens.value = settings.sensitivity;
@@ -1850,6 +1859,7 @@ function syncSettingsUI() {
   setMicSensVal.textContent = settings.micSens.toFixed(1) + "x";
   setQuality.value = settings.quality;
   if (setDifficulty) setDifficulty.value = settings.difficulty;
+  if (setFov) { setFov.value = settings.fov; setFovVal.textContent = settings.fov; }
 }
 syncSettingsUI();
 
@@ -1867,6 +1877,14 @@ if (setDifficulty) {
     settings.difficulty = setDifficulty.value;
     saveSettings();
     ui.toast("난이도는 다음 시작 시 적용됩니다", 2400);
+  });
+}
+if (setFov) {
+  setFov.addEventListener("input", () => {
+    settings.fov = parseInt(setFov.value, 10);
+    setFovVal.textContent = settings.fov;
+    applyFov();
+    saveSettings();
   });
 }
 
