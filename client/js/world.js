@@ -1359,9 +1359,28 @@ export class World {
     }
   }
 
+  // 서랍 랜덤 전리품 — 열쇠/단서 노트/덫는 고정, 소모품만 매 게임 무작위
+  randomizeDrawerLoot() {
+    const FIXED = new Set(["key_shed", "key_store", "note_shed", "note_power", "trap"]);
+    const POOL = [
+      ["battery", "예비 배터리"], ["battery", "예비 배터리"], ["battery", "예비 배터리"], ["battery", "예비 배터리"],
+      ["medkit", "구급상자"], ["medkit", "구급상자"],
+      ["smoke", "연막탄"], ["smoke", "연막탄"],
+      ["decoy", "소음장치"], ["decoy", "소음장치"],
+    ];
+    for (const d of this.drawers) {
+      const base = d.lootBaseId !== undefined ? d.lootBaseId : d.lootId;
+      if (FIXED.has(base)) continue;
+      const [id, name] = POOL[(Math.random() * POOL.length) | 0];
+      d.lootId = id; d.lootName = name;
+      d.lootBaseId = id; d.lootBaseName = name;
+    }
+  }
+
   // 새 게임을 시작할 때 퍼즐/전리품 상태를 초기화
   resetInteractive() {
     this.clearTraps();
+    this.randomizeDrawerLoot();
     for (const d of this.drawers) {
       d.opened = false;
       d.anim = 0;
