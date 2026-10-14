@@ -149,6 +149,8 @@ export class UI {
       active: ["ON", "on"],
       denied: ["거부됨", "warn"],
       unsupported: ["지원 안 됨", "warn"],
+      none: ["마이크 없음", "warn"],
+      busy: ["다른 앱이 사용 중", "warn"],
       error: ["오류", "warn"]
     };
     const [label, cls] = map[state] || ["—", ""];

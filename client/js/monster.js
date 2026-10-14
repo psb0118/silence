@@ -5,7 +5,7 @@ import { clamp, damp, angleLerp, dist2, rand } from "./util.js";
 const STATE = {
   ROAM: "ROAM", LISTEN: "LISTEN", INVESTIGATE: "INVESTIGATE",
   STALK: "STALK", SEARCH: "SEARCH", CHASE: "CHASE",
-  ATTACK: "ATTACK", RECOVER: "RECOVER"
+  ATTACK: "ATTACK", RECOVER: "RECOVER", AMBUSH: "AMBUSH"
 };
 export { STATE };
 
@@ -47,6 +47,14 @@ export class Monster {
     this._inspectTimer = 0;
     this.knownHide = null;       // "들킨 상태"의 은신처 — 반드시 뒤져 찾아낸다
     this.sawPlayerTime = -1e9;   // 플레이어를 실제로 목격한 시각
+
+    // 매복(암부시)
+    this._ambushSpot = null;
+    this._ambushTimer = 0;
+    this._ambushCooldown = 8;    // 게임 시작 직후에는 바로 매복하지 않음
+    this._ambushRollT = 3;       // 수색 중 매복 재롤 간격
+    this._lastCatchTime = -1e9;  // 처치 직후에는 매복하지 않고 사냥을 이어간다
+    this.lurking = false;        // 매복 자세 (눈 dim + 웅크림)
 
     // 공격
     this._attackPhase = 0;
@@ -184,6 +192,7 @@ export class Monster {
     eyeGlow.position.set(0, 0.2, 0.18);
     this.head.add(eyeGlow);
     this.eyeGlow = eyeGlow;
+    this.eyeMat = eyeMat;
     this.eyeLight = new THREE.PointLight(0xff3a1e, 9, 14, 1.8);
     this.eyeLight.position.set(0, 0.2, 0.2);
     this.head.add(this.eyeLight);
@@ -277,6 +286,16 @@ export class Monster {
       this.audio.attackScreech();
     }
     if (s === STATE.SEARCH) { this._searchTarget = null; }
+    if (s === STATE.AMBUSH) {
+      // 매복 시작: 살짝 킁킁거려 근처 플레이어에게 공평한 단서를 준다
+      try { this.audio.sniff(0.7, 0); } catch (e) {}
+    }
+    if (prev === STATE.AMBUSH && s !== STATE.AMBUSH) {
+      // 매복 종료: 자세 복귀 + 다음 매복까지 쿨다운
+      this.lurking = false;
+      this._ambushSpot = null;
+      this._ambushCooldown = CONFIG.monster.ambushCooldown ?? 25;
+    }
     if (s !== STATE.CHASE && s !== STATE.ATTACK) this.chasing = false;
   }
 
@@ -361,8 +380,9 @@ export class Monster {
       const range = cfg.hearBase * e.intensity;
       if (d > range) continue;
       // 벽/문 뒤면 감쇠 (완전 음향 시뮬레이션은 아님)
+      // 옆 방 소리도 어느 정도는 듣는다 (0.45 → 0.6)
       let atten = 1;
-      if (this.world.lineBlocked(this.x, this.z, e.x, e.z)) atten = 0.45;
+      if (this.world.lineBlocked(this.x, this.z, e.x, e.z)) atten = 0.6;
       const score = e.intensity * (1 - d / range) * atten;
       if (score > bestScore) { bestScore = score; best = { e, d, score }; }
     }
@@ -403,8 +423,17 @@ export class Monster {
     } else if (st === STATE.SEARCH) {
       this.inspectSpot = null;
       this._searchTarget = { x: best.e.x, z: best.e.z };
+    } else if (st === STATE.AMBUSH) {
+      // 매복 중 먼 곳에서 큰 소리가 나면 매복을 풀고 확인하러 간다
+      if (best.d > 12) this._setState(STATE.INVESTIGATE);
+    } else if (st === STATE.STALK) {
+      // 스토킹 중에도 큰 소리가 나면 즉시 반응한다 (이전에는 무시됐다)
+      if (best.score > 0.18) this._setState(STATE.INVESTIGATE);
     } else if ((st === STATE.ROAM || st === STATE.LISTEN) && best.score > 0.10) {
       this._setState(STATE.INVESTIGATE);
+    } else if (st === STATE.INVESTIGATE && best.score > 0.18) {
+      // 계속 시끄러우면 한 단계 격상한다
+      this._setState(STATE.STALK);
     }
   }
 
@@ -415,6 +444,46 @@ export class Monster {
       if (d < bd) { bd = d; best = s; }
     }
     if (best) this.seenHide = { spot: best, time: this.time };
+  }
+
+  // 매복 시도: 마지막 인지 지점 근처 은신처에 숨어 기습을 노린다
+  _maybeAmbush() {
+    const cfg = CONFIG.monster;
+    if (this._ambushCooldown > 0) return false;
+    // 처치 직후 15초는 매복하지 않고 남은 생존자를 사냥한다
+    if (this.time - this._lastCatchTime < 15) return false;
+    if (!this.lastKnownValid) return false;
+    if (this.suspicion < 0.25 || this.suspicion > 1.1) return false;
+    if (Math.random() > (cfg.ambushChance ?? 0.35)) return false;
+    const spots = this.world.hidingSpots;
+    if (!spots || !spots.length) return false;
+    let best = null, bd = Infinity;
+    for (const s of spots) {
+      const d = Math.hypot(s.x - this.lastKnown.x, s.z - this.lastKnown.z);
+      if (d < (cfg.ambushMinD ?? 5) || d > (cfg.ambushMaxD ?? 18)) continue;
+      if (this.world.inSafeZone(s.x, s.z)) continue;
+      if (d < bd) { bd = d; best = s; }
+    }
+    if (!best) return false;
+    this._ambushSpot = best;
+    this._ambushTimer = 0;
+    this._setState(STATE.AMBUSH);
+    return true;
+  }
+
+  // 매복 기습: 가까이 온 플레이어에게 덮친다
+  _pounce(player) {
+    const cfg = CONFIG.monster;
+    this.lastKnown = { x: player.x, z: player.z };
+    this.lastKnownValid = true;
+    this.lastKnownTime = this.time;
+    this.sawPlayerTime = this.time;
+    this.suspicion = 1.4;
+    this.lostTimer = 0;
+    this._setState(STATE.ATTACK);
+    this._attackPhase = cfg.attackWindup * 0.4;
+    try { this.audio.chaseStinger(); } catch (e) {}
+    try { this.audio.screech(1); } catch (e) {}
   }
 
   // 은신 직전에 괴물이 플레이어의 위치를 파악하고 있었는가 → "들킨 상태"
@@ -439,6 +508,7 @@ export class Monster {
     this.stateTime += dt;
     if (this._grace > 0) this._grace -= dt;
     if (this.slowT > 0) this.slowT = Math.max(0, this.slowT - dt);
+    if (this._ambushCooldown > 0) this._ambushCooldown -= dt;
 
     // 스턴 중: AI·이동 정지 (어지러움 흔들림 + 연출만 유지)
     if (this.stunT > 0) {
@@ -580,7 +650,17 @@ export class Monster {
           }
         } else {
           if (!this._searchTarget || this._nearTarget(1.8)) {
+            // 새로 뒤질 곳을 정하기 전에 매복을 노려본다 (성공하면 이번 프레임은 여기서 끝)
+            if (this._maybeAmbush()) break;
             this._pickSearchTarget();
+            this._ambushRollT = 3;
+          } else {
+            // 수색이 길어지면 주기적으로 매복을 노려본다
+            this._ambushRollT = (this._ambushRollT ?? 3) - dt;
+            if (this._ambushRollT <= 0) {
+              this._ambushRollT = 3;
+              if (this._maybeAmbush()) break;
+            }
           }
           this.target = this._searchTarget;
         }
@@ -591,6 +671,39 @@ export class Monster {
           this.seenHide = null;
           this._pickRoamTarget();
         }
+        break;
+      }
+      case STATE.AMBUSH: {
+        speed = cfg.stalkSpeed;
+        const spot = this._ambushSpot;
+        if (!spot) { this._setState(STATE.SEARCH); break; }
+        const dSpot = Math.hypot(spot.x - this.x, spot.z - this.z);
+        if (!this.lurking) {
+          // 매복 지점으로 조용히 이동
+          this.target = { x: spot.x, z: spot.z };
+          if (dSpot < 1.4) {
+            this.lurking = true;
+            this._ambushTimer = 0;
+          }
+        } else {
+          // 웅크리고 대기 — 기습 타이밍을 노린다
+          moving = false;
+          this._ambushTimer += dt;
+          faceTarget = { x: this.lastKnown.x, z: this.lastKnown.z };
+          const dP = Math.hypot(player.x - this.x, player.z - this.z);
+          const clearPounce = !player.hidden && !playerSafe &&
+            dP < (cfg.ambushRadius ?? 6) &&
+            !this.world.lineBlocked(this.x, this.z, player.x, player.z);
+          if (clearPounce) {
+            this._pounce(player);
+            break;
+          }
+          if (this._ambushTimer > (cfg.ambushTime ?? 11) || playerSafe) {
+            this._setState(STATE.SEARCH);
+            break;
+          }
+        }
+        if (sees) { this._setState(STATE.CHASE); }
         break;
       }
       case STATE.CHASE: {
@@ -658,6 +771,7 @@ export class Monster {
     if (!playerSafe && !player.hidden && !this._caught && dToPlayer < cfg.catchRadius &&
         !this.world.lineBlocked(this.x, this.z, player.x, player.z) && this.onCatch) {
       this._caught = true;
+      this._lastCatchTime = this.time;
       this.onCatch();
     }
 
@@ -761,20 +875,28 @@ export class Monster {
       // 준비 (뒤로 젖힘)
       this.moveSpeedActual = 0;
     } else if (this._attackPhase < cfg.attackWindup + 0.36) {
-      // 돌진
+      // 돌진 — 벽에 막히면 헛스윙으로 끝낸다 (벽이랑 싸우지 않음)
       const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
       let nx = this.x + fx * cfg.attackSpeed * dt;
       let nz = this.z + fz * cfg.attackSpeed * dt;
       const c = this.world.collide(nx, nz, this.radius);
       nx = c.x; nz = c.z;
-      if (!this.world.inSafeZone(nx, nz)) { this.x = nx; this.z = nz; }
-      this.moveSpeedActual = cfg.attackSpeed;
+      const dashMoved = Math.hypot(nx - this.x, nz - this.z);
+      if (dashMoved < cfg.attackSpeed * dt * 0.25) {
+        // 벽에 박힘: 돌진을 접고 회복으로
+        this._attackPhase = cfg.attackTime;
+        this.moveSpeedActual = 0;
+      } else {
+        if (!this.world.inSafeZone(nx, nz)) { this.x = nx; this.z = nz; }
+        this.moveSpeedActual = cfg.attackSpeed;
+      }
     } else {
       this.moveSpeedActual = 0;
     }
     if (!playerSafe && !player.hidden && !this._caught && d < cfg.catchRadius && this._attackPhase > cfg.attackWindup &&
         !this.world.lineBlocked(this.x, this.z, player.x, player.z) && this.onCatch) {
       this._caught = true;
+      this._lastCatchTime = this.time;
       this.onCatch();
     }
     if (this._attackPhase > cfg.attackTime) this._setState(STATE.RECOVER);
@@ -902,15 +1024,37 @@ export class Monster {
     // 안전지대 진입 금지
     if (this.world.inSafeZone(nx, nz)) { nx = this.x; nz = this.z; }
 
-    const moved = Math.hypot(nx - this.x, nz - this.z);
+    let moved = Math.hypot(nx - this.x, nz - this.z);
+    // 축 분리 슬라이딩: 대각선으로 벽에 박히면 X·Z축 각각으로 미끄러지듯 이동을 시도한다.
+    // (collide는 밀어내기만 하고 슬라이딩을 안 하므로 여기서 보정)
+    if (moved < speed * dt * 0.35) {
+      const tryX = this.world.collide(this.x + dirx * speed * dt, this.z, this.radius);
+      const mx = Math.hypot(tryX.x - this.x, tryX.z - this.z);
+      const tryZ = this.world.collide(this.x, this.z + dirz * speed * dt, this.radius);
+      const mz = Math.hypot(tryZ.x - this.x, tryZ.z - this.z);
+      if (mx > moved && mx >= mz) {
+        nx = tryX.x; nz = tryZ.z;
+        if (!this.world.inSafeZone(nx, nz)) moved = mx;
+        else { nx = this.x; nz = this.z; moved = 0; }
+      } else if (mz > moved) {
+        nx = tryZ.x; nz = tryZ.z;
+        if (!this.world.inSafeZone(nx, nz)) moved = mz;
+        else { nx = this.x; nz = this.z; moved = 0; }
+      }
+    }
     this.moveSpeedActual = moved / Math.max(dt, 1e-4);
 
+    // 스턱 회복: 한 방향으로 버티지 않고 여러 각도를 순환하며 탈출을 시도한다.
+    // 추격 중에는 더 빨리(0.7s) 반응해 벽 앞에서 멈칫거리는 시간을 줄인다.
+    const stuckLimit = (this.state === STATE.CHASE || this.state === STATE.ATTACK) ? 0.7 : cfg.stuckTime;
     if (moved < speed * dt * 0.35) {
       this._stuckTimer += dt;
-      if (this._stuckTimer > cfg.stuckTime) {
+      if (this._stuckTimer > stuckLimit) {
         this._stuckTimer = 0;
-        // 같은 방향으로 또 붙지 않도록 매번 좌우 교대
-        this._wanderBias = (this._wanderBias >= 0 ? -1 : 1) * (Math.PI / 3);
+        this._stuckStep = ((this._stuckStep || 0) + 1) % 4;
+        // ±60° → ±120° → 뒤돌기 순환 + 약간의 무작위
+        const base = [Math.PI / 3, -Math.PI * 2 / 3, Math.PI * 2 / 3, Math.PI][this._stuckStep];
+        this._wanderBias = base + rand(-0.2, 0.2);
         this._path = [];
         this._repathTimer = 0;
         // 추격 중에는 lastKnown를 벗어난 목표로 흔들지 않는다 (매 프레임 lastKnown에서 다시 세팅됨)
@@ -936,7 +1080,8 @@ export class Monster {
     const st = this.state;
     const chasing = st === STATE.CHASE;
     const attacking = st === STATE.ATTACK;
-    const stalking = st === STATE.STALK || st === STATE.INVESTIGATE || st === STATE.SEARCH || st === STATE.LISTEN;
+    const lurking = this.lurking && st === STATE.AMBUSH;
+    const stalking = st === STATE.STALK || st === STATE.INVESTIGATE || st === STATE.SEARCH || st === STATE.LISTEN || st === STATE.AMBUSH;
 
     const rate = 1.4 + speed01 * 9 + (chasing ? 3 : 0);
     const p = (this.animPhase += dt * rate);
@@ -962,9 +1107,9 @@ export class Monster {
     this.elbowL.rotation.x = -(chasing ? 0.5 : 0.7) - Math.max(0, Math.sin(p)) * 0.4;
     this.elbowR.rotation.x = -(chasing ? 0.5 : 0.7) - Math.max(0, Math.sin(p + Math.PI)) * 0.4;
 
-    // 몸통 — 구부정, 추격 시 낮게
-    this.torso.rotation.x = hunch;
-    this.torso.position.y = this._baseTorsoY - speed01 * 0.15 - (chasing ? 0.1 : 0);
+    // 몸통 — 구부정, 추격 시 낮게, 매복 시 바짝 웅크림
+    this.torso.rotation.x = hunch + (lurking ? 0.35 : 0);
+    this.torso.position.y = this._baseTorsoY - speed01 * 0.15 - (chasing ? 0.1 : 0) - (lurking ? 0.35 : 0);
     this.torso.rotation.z = Math.sin(p) * 0.06 * (0.3 + speed01);
 
     // 목/머리 — 흔들림, 스캔
@@ -991,10 +1136,13 @@ export class Monster {
     else this.attackAnim = damp(this.attackAnim, 0, 6, dt);
 
     // 추격/공격 — 눈의 잔불이 스트로브처럼 번쩍이고 입이 붉게 달아오른다
+    // 매복 중에는 눈을 감춰 기척을 숨긴다
     const frenzy = chasing || attacking;
-    if (this.eyeLight) this.eyeLight.intensity = frenzy ? 9 + Math.sin(this.time * 27) * 7 : 8;
+    const eyeDim = lurking ? 0.12 : 1;
+    if (this.eyeLight) this.eyeLight.intensity = (frenzy ? 9 + Math.sin(this.time * 27) * 7 : 8) * eyeDim;
+    if (this.eyeMat) this.eyeMat.emissiveIntensity = 4.4 * eyeDim * (frenzy ? 1.15 : 1);
     if (this.eyeGlow) {
-      this.eyeGlow.material.opacity = frenzy ? 0.55 + 0.35 * Math.sin(this.time * 27) : 0.45;
+      this.eyeGlow.material.opacity = (frenzy ? 0.55 + 0.35 * Math.sin(this.time * 27) : 0.45) * eyeDim;
       const es = 1 + (frenzy ? 0.3 + 0.2 * Math.sin(this.time * 23) : 0);
       this.eyeGlow.scale.set(0.6 * es, 0.42 * es, 1);
     }
@@ -1141,6 +1289,12 @@ export class Monster {
     this._inspectTimer = 0;
     this.knownHide = null;
     this.sawPlayerTime = -1e9;
+    this._ambushSpot = null;
+    this._ambushTimer = 0;
+    this._ambushCooldown = 8;
+    this._ambushRollT = 3;
+    this._lastCatchTime = -1e9;
+    this.lurking = false;
     this._caught = false;
     this._boundaryTarget = null;
     this._wasHidden = false;

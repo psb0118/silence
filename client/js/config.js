@@ -109,8 +109,15 @@ export const CONFIG = {
 
     // 소리 → 즉시 추격 임계 (거리·세기 결합. 소리만으로는 자동 추격 X)
     loudIntensity: 0.6,
-    loudScore: 0.34,
+    loudScore: 0.30,
     loudDist: 7,
+    // 매복(암부시): 수색 중 마지막 인지 지점 근처에 숨어 기습한다
+    ambushChance: 0.35,   // 수색 목표를 새로 정할 때 매복을 노릴 확률
+    ambushTime: 11,       // 웅크리고 기다리는 시간(초)
+    ambushRadius: 6,      // 이 안으로 들어오면 덮친다
+    ambushCooldown: 25,   // 매복 종료 후 다음 매복까지
+    ambushMinD: 5,        // 인지 지점으로부터 최소 거리
+    ambushMaxD: 18,       // 인지 지점으로부터 최대 거리
     // 은신처 발견/조사 확률
     inspectFindChance: 0.55,
     hideInspectChance: 0.45

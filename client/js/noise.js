@@ -22,7 +22,7 @@ export class NoiseSystem {
     this._micEventZ = 0;
 
     // 마이크 상태
-    this.micState = "off";  // off | pending | active | denied | unsupported | error
+    this.micState = "off";  // off | pending | active | denied | unsupported | none | busy | error
     this.micStream = null;
     this.micSource = null;
     this.micAnalyser = null;
@@ -94,14 +94,27 @@ export class NoiseSystem {
   /* ---------- 마이크 ---------- */
   async attachMic() {
     if (!this.micEnabled) { this.micState = "off"; return; }
-    if (this.micState === "active" || this.micState === "pending") return;
+    if (this.micState === "active") return;
+    // 권한 팝업을 무시하고 오래 방치하면 pending에 고착되므로, 8초가 지나면 재시도 허용
+    if (this.micState === "pending") {
+      if (this._micPendingAt && performance.now() - this._micPendingAt < 8000) return;
+      this.micState = "off";
+    }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       this.micState = "unsupported";
       return;
     }
-    if (!this.audio.ctx) { this.micState = "unsupported"; return; }
+    // 오디오가 아직 초기화되지 않았으면 여기서 만든다 (unsupported 오분류 방지)
+    if (!this.audio.ctx) {
+      try { this.audio.init(); } catch (e) {}
+      try { this.audio.resume(); } catch (e) {}
+      if (!this.audio.ctx) { this.micState = "unsupported"; return; }
+    } else {
+      try { this.audio.resume(); } catch (e) {}
+    }
 
     this.micState = "pending";
+    this._micPendingAt = performance.now();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
@@ -114,9 +127,15 @@ export class NoiseSystem {
       this.micSource.connect(this.micAnalyser);
       this._micBuf = new Float32Array(this.micAnalyser.fftSize);
       this.micState = "active";
+      this._micPendingAt = 0;
     } catch (err) {
-      this.micState = err && err.name === "NotAllowedError" ? "denied" : "error";
+      const n = err && err.name;
+      this.micState = n === "NotAllowedError" ? "denied"
+        : n === "NotFoundError" || n === "DevicesNotFoundError" ? "none"
+        : n === "NotReadableError" || n === "TrackStartError" ? "busy"
+        : "error";
       this.micStream = null;
+      this._micPendingAt = 0;
     }
   }
 
@@ -126,6 +145,7 @@ export class NoiseSystem {
       this.stopMic();
       this.micState = "off";
     } else {
+      try { this.audio.resume(); } catch (e) {}
       this.attachMic();
     }
     return this.micEnabled;

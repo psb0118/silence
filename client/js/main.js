@@ -475,6 +475,10 @@ net.setup({
     started: (d) => {
       if (d && d.difficulty) settings.difficulty = d.difficulty;
       net.ending = false;
+      net.closePanel();
+      // 원격 시작(제스처 없음) 대비: 오디오를 여기서도 깨운다
+      try { audio.init(); } catch (e) {}
+      try { audio.resume(); } catch (e) {}
       startGame();
     },
     aborted: () => {
@@ -570,6 +574,9 @@ function onKey(e, down) {
       } else if (ui.isNoteOpen()) {
         ui.hideNote();
         ui.toast("메모 닫힘 — 화면을 클릭해 계속", 2400);
+      } else if (document.getElementById("mp") && !document.getElementById("mp").classList.contains("hidden") && game.phase === "menu") {
+        // 멀티 패널이 떠 있으면 ESC로 닫기 (방에 있으면 나가지는 않는다)
+        net.closePanel();
       } else if (game.phase === "playing") pause();
       break;
   }
@@ -733,6 +740,8 @@ function startGame() {
   ui.hide(ui.pause);
   ui.hide(ui.death);
   ui.hide(ui.win);
+  // 멀티 로비 패널이 떠 있으면 게임 화면을 가리므로 반드시 닫는다
+  document.getElementById("mp")?.classList.add("hidden");
   ui.setHudVisible(true);
   mapOn = false;
   ui.toggleMinimap(false);
@@ -766,12 +775,28 @@ function micFeedback(onTurnOn) {
     ui.toast("마이크 권한 거부됨 — 주소창 자물쇠 → 마이크 허용 후 V키로 다시 켜세요", 5600);
   } else if (s === "unsupported") {
     ui.toast("이 주소에서는 마이크를 쓸 수 없다. http://localhost 로 접속해라", 5600);
+  } else if (s === "none") {
+    ui.toast("마이크 장치를 찾을 수 없다 — 연결 후 V키로 다시 켜세요", 4600);
+  } else if (s === "busy") {
+    ui.toast("다른 앱이 마이크를 쓰고 있다 — 그 앱을 끄고 V키로 다시 시도", 4600);
   } else if (s === "error") {
-    ui.toast("마이크 오류 — 다른 앱이 점유 중일 수 있다. V키로 다시 시도", 4600);
+    ui.toast("마이크 오류 — V키로 다시 시도", 4600);
   } else if (s === "off" && !onTurnOn) {
     ui.toast("마이크 꺼짐", 1600);
   }
 }
+
+// 브라우저 자동재생 정책: 첫 사용자 제스처에 오디오를 깨운다.
+// (원격 시작으로 제스처 없이 시작된 경우 AudioContext가 suspended로 stuck되는 문제 방지)
+let _audioUnlocked = false;
+function unlockAudio() {
+  if (_audioUnlocked) return;
+  _audioUnlocked = true;
+  try { audio.init(); } catch (e) {}
+  try { audio.resume(); } catch (e) {}
+}
+window.addEventListener("pointerdown", unlockAudio);
+window.addEventListener("keydown", unlockAudio);
 
 function resetFuses() {
   world.setExitPowered(false);

@@ -55,6 +55,7 @@ export class World {
     this._buildFuses();
     this._buildDoorsAndLoot();
     this._buildGate();
+    this._buildProps();
   }
 
   /* ---------- 지형 높이 (결정적 함수) ---------- */
@@ -473,7 +474,7 @@ export class World {
   _buildCompound() {
     this.walls = [];      // 미니맵용 벽 선분
     this.rooms = [];      // 미니맵용 방 정보
-    this.wallMat = new THREE.MeshStandardMaterial({ color: 0x3c4147, roughness: 1.0 });
+    this.wallMat = new THREE.MeshStandardMaterial({ color: 0xe8ebee, map: makeWallTexture(), roughness: 0.95, metalness: 0.1 });
     this.rustMat = new THREE.MeshStandardMaterial({ color: 0x75452f, roughness: 0.85, metalness: 0.25 });
     this.metalMat = new THREE.MeshStandardMaterial({ color: 0x59616c, roughness: 0.5, metalness: 0.7 });
     this.woodMat = new THREE.MeshStandardMaterial({ color: 0x5a4a30, roughness: 0.9 });
@@ -1440,6 +1441,57 @@ export class World {
     this.exit = { x: gx, z: gz + 3 };
   }
 
+  /* ---------- 야외 소품 (외벽에 붙여 배치 — 시야를 새로 가리지 않음) ---------- */
+  _buildProps() {
+    const wood = this.woodMat;
+    const rust = this.rustMat;
+    const dark = new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.8, metalness: 0.3 });
+
+    const crate = (x, z, s, ry) => {
+      const y = this.heightAt(x, z);
+      const g = new THREE.Group();
+      const box = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), wood);
+      box.position.y = s / 2;
+      const lid = new THREE.Mesh(new THREE.BoxGeometry(s * 1.04, s * 0.12, s * 1.04), dark);
+      lid.position.y = s * 0.94;
+      const band = new THREE.Mesh(new THREE.BoxGeometry(s * 1.02, s * 0.1, s * 1.02), rust);
+      band.position.y = s * 0.32;
+      g.add(box, lid, band);
+      g.position.set(x, y, z);
+      g.rotation.y = ry;
+      g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      this.scene.add(g);
+      this.circles.push({ x, z, r: s * 0.72 });
+    };
+    const barrel = (x, z) => {
+      const y = this.heightAt(x, z);
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.1, 12), rust);
+      body.position.y = 0.55;
+      const hoop1 = new THREE.Mesh(new THREE.TorusGeometry(0.43, 0.035, 6, 14), dark);
+      hoop1.rotation.x = Math.PI / 2; hoop1.position.y = 0.85;
+      const hoop2 = hoop1.clone(); hoop2.position.y = 0.28;
+      g.add(body, hoop1, hoop2);
+      g.position.set(x, y, z);
+      g.rotation.y = Math.random() * Math.PI;
+      g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      this.scene.add(g);
+      this.circles.push({ x, z, r: 0.55 });
+    };
+
+    // 남쪽 외벽 바깥 (z=18) — 통로 중앙(x=0)은 비운다
+    crate(-30, 19.7, 1.3, 0.2); crate(-28.3, 19.7, 1.1, -0.15);
+    barrel(28, 19.7); barrel(30, 19.6);
+    // 서쪽 외벽 바깥 (x=-46)
+    crate(-47.7, -10, 1.2, 0.1); barrel(-47.7, -8);
+    // 동쪽 외벽 바깥 (x=46)
+    barrel(47.7, -12); crate(47.7, 5, 1.25, -0.2); crate(47.7, 6.9, 1.0, 0.3);
+    // 북쪽 외벽 바깥 (z=-50) — 탈출로(x=0)는 비운다
+    barrel(-20, -51.7); barrel(22, -51.7);
+    crate(-8, -56, 1.2, 0.4); barrel(-10.2, -55.6);
+    crate(9, -54, 1.1, -0.3);
+  }
+
   setExitPowered(powered) {
     if (powered) {
       this.exitIndicatorMat.color.setHex(0x66ff99);
@@ -1544,6 +1596,13 @@ export class World {
     for (let i = 0; i < mist.length; i++) {
       mist[i].position.x += Math.sin(elapsed * 0.22 + i * 1.7) * dt * 0.5;
       mist[i].position.z += Math.cos(elapsed * 0.17 + i * 2.3) * dt * 0.35;
+    }
+    // 탈출구 비콘 펄스 (전원 ON이면 빠르고 밝게)
+    if (this.exitIndicatorMat) {
+      const powered = !!(this.gate && this.gate.open);
+      const base = powered ? 2.0 : 1.2;
+      const rate = powered ? 6 : 2.2;
+      this.exitIndicatorMat.emissiveIntensity = base * (0.75 + 0.25 * Math.sin(elapsed * rate));
     }
     const red = _RED;
     const dd = this.distress;
@@ -1675,8 +1734,56 @@ function makeConcreteTexture() {
   return tex;
 }
 
-function makeGlowTexture(inner, outer) {
+function makeWallTexture() {
+  // 시설 벽면: 금속 패널 + 리벳 + 녹물/그을음 (타일링용, 강한 선 없이 은은하게)
   const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#3a3f45";
+  ctx.fillRect(0, 0, 256, 256);
+  // 패널 결 (세로 4분할)
+  for (let p = 0; p <= 4; p++) {
+    const x = p * 64;
+    ctx.fillStyle = "rgba(12,14,16,0.55)";
+    ctx.fillRect(x - 1, 0, 2, 256);
+    ctx.fillStyle = "rgba(150,160,170,0.10)";
+    ctx.fillRect(x + 1, 0, 1, 256);
+    // 리벳
+    for (let y = 12; y < 256; y += 56) {
+      ctx.fillStyle = "rgba(16,18,20,0.7)";
+      ctx.beginPath(); ctx.arc(x + 6, y, 2.4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(170,180,190,0.25)";
+      ctx.beginPath(); ctx.arc(x + 5.4, y - 0.8, 1, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  // 가로 보강대
+  ctx.fillStyle = "rgba(12,14,16,0.4)";
+  ctx.fillRect(0, 84, 256, 3);
+  ctx.fillRect(0, 172, 256, 3);
+  // 녹물/그을음 얼룩
+  for (let i = 0; i < 26; i++) {
+    const x = Math.random() * 256, y = Math.random() * 200;
+    const w = 3 + Math.random() * 9, h = 12 + Math.random() * 46;
+    const g = ctx.createLinearGradient(0, y, 0, y + h);
+    const rust = Math.random() < 0.4;
+    g.addColorStop(0, rust ? "rgba(117,69,47,0.34)" : "rgba(10,12,14,0.30)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(x, y, w, h);
+  }
+  // 노이즈
+  for (let i = 0; i < 3500; i++) {
+    ctx.fillStyle = Math.random() < 0.5 ? "rgba(0,0,0,0.25)" : "rgba(160,170,180,0.12)";
+    ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function makeGlowTexture(inner, outer) {  const c = document.createElement("canvas");
   c.width = c.height = 128;
   const ctx = c.getContext("2d");
   const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);

@@ -477,6 +477,11 @@ export const net = {
       close();
     });
 
+    // 닫기: 방에 들어가지 않은 상태에서는 그냥 패널만 닫는다
+    $("#mp-close")?.addEventListener("click", () => {
+      close();
+    });
+
     $("#mp-create")?.addEventListener("click", () => {
       this.createRoom($("#mp-name")?.value.trim());
     });
@@ -498,6 +503,11 @@ export const net = {
   openPanel() {
     if (this.hooks.panel) this.hooks.panel(true, this.state === "lobby");
     this._refreshUI();
+  },
+
+  // 게임 시작 등에서 멀티 패널을 강제로 닫을 때
+  closePanel() {
+    if (this._closePanel) this._closePanel();
   },
 
   _status(msg) {
