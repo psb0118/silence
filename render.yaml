@@ -3,5 +3,5 @@ services:
     name: silence
     env: node
     plan: free
-    buildCommand: ""
+    buildCommand: "npm install"
     startCommand: node server.js
