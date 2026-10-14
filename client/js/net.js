@@ -102,20 +102,29 @@ export const net = {
   init() {
     this._wireUI();
     const q = new URLSearchParams(location.search);
-    if (!q.has("srv")) {
-      this.active = false;
-      const note = $("#mp-note");
-      if (note) note.textContent = "협동 멀티플레이 — 주소 뒤에 ?srv=서버주소 를 붙이면 켜진다";
-      const btn = $("#btn-mp");
-      if (btn) btn.disabled = true;
-      return false;
+    if (q.has("srv")) {
+      // 명시적 서버 지정 (별도 시그널링 서버를 쓸 때)
+      this.active = true;
+      this.srv = (q.get("srv") || "").trim() || location.origin;
+      this._status("서버에 연결 중…");
+      loadScript(this.srv.replace(/\/$/, "") + "/socket.io/socket.io.js")
+        .then(() => this._connect())
+        .catch((e) => this._status(e.message));
+      return true;
     }
+    // 같은 출처에 시그널링 서버가 있으면 자동 활성화 (없으면 싱글 전용)
+    const btn = $("#btn-mp");
+    if (btn) btn.disabled = true;
     this.active = true;
-    this.srv = (q.get("srv") || "").trim() || location.origin;
-    this._status("서버에 연결 중…");
-    loadScript(this.srv.replace(/\/$/, "") + "/socket.io/socket.io.js")
+    this.srv = location.origin;
+    this._status("멀티 서버 확인 중…");
+    loadScript(location.origin.replace(/\/$/, "") + "/socket.io/socket.io.js")
       .then(() => this._connect())
-      .catch((e) => this._status(e.message));
+      .catch(() => {
+        this.active = false;
+        const note = $("#mp-note");
+        if (note) note.textContent = "협동 멀티플레이 — node 서버(server.js)로 접속하면 켜진다";
+      });
     return true;
   },
 
@@ -128,6 +137,8 @@ export const net = {
     s.on("connect", () => {
       this.myId = s.id;
       this.connected = true;
+      const btn = $("#btn-mp");
+      if (btn) btn.disabled = false;
       this._status("연결됨 — 방을 만들거나 참가하라");
       this._refreshUI();
     });
@@ -137,6 +148,8 @@ export const net = {
       this.isHost = false;
       this.roomId = null;
       this._clearRemotes();
+      const btn = $("#btn-mp");
+      if (btn) btn.disabled = true;
       this._status("연결이 끊겼다 — 새로고침해라");
       this._refreshUI();
     });
