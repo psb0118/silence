@@ -1369,11 +1369,15 @@ export class World {
       ["decoy", "소음장치"], ["decoy", "소음장치"],
     ];
     for (const d of this.drawers) {
-      const base = d.lootBaseId !== undefined ? d.lootBaseId : d.lootId;
-      if (FIXED.has(base)) continue;
+      // lootBaseId는 항상 '원래 전리품'으로 보존한다. setNightmareLoot()가
+      // 충전소 판정에 lootBaseId를 쓰므로 랜덤 결과로 덮어쓰면 안 된다.
+      if (d.lootBaseId === undefined) {
+        d.lootBaseId = d.lootId;
+        d.lootBaseName = d.lootName;
+      }
+      if (FIXED.has(d.lootBaseId)) continue;
       const [id, name] = POOL[(Math.random() * POOL.length) | 0];
       d.lootId = id; d.lootName = name;
-      d.lootBaseId = id; d.lootBaseName = name;
     }
   }
 

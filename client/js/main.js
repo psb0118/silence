@@ -1588,7 +1588,10 @@ function activeMonsters() {
 
 /* 몬스터 시뮬레이션 — 싱글/호스트는 AI, 클라이언트는 스냅샷 고스트 */
 function monsterSim(dt) {
-  const ghost = net.active && !net.isHost;
+  // 방에 참가해 '플레이 중'일 때만 호스트/클라이언트 역할이 갈린다.
+  // 서버에 연결만 하고 방에 없을 때(싱글플레이)는 로컬 AI를 돌려야 한다.
+  const playing = net.active && net.state === "playing";
+  const ghost = playing && !net.isHost;
   monster.ghost = ghost;
   if (monster2) monster2.ghost = ghost;
 
@@ -1602,7 +1605,7 @@ function monsterSim(dt) {
   }
 
   const evs = noise.drainEvents();
-  if (net.active && net.isHost) {
+  if (playing && net.isHost) {
     // host authority: 가장 가까운 생존 플레이어를 몬스터의 목표로 삼는다
     const t1 = hostTargetFor(monster);
     monster._catchId = t1.id;
