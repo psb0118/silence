@@ -12,11 +12,11 @@ import { net } from "./net.js";
 
 /* ================= 설정 ================= */
 const settings = Object.assign(
-  { sensitivity: 1, invertY: false, volume: 0.8, micSens: 1, quality: "medium", difficulty: "normal", fov: 80 },
+  { sensitivity: 1, invertY: false, volume: 0.8, micSens: 1, quality: "medium", difficulty: "normal", fov: 75 },
   JSON.parse(localStorage.getItem("silence.settings") || "{}")
 );
 if (!DIFFICULTY[settings.difficulty]) settings.difficulty = "normal";
-if (typeof settings.fov !== "number" || settings.fov < 60 || settings.fov > 105) settings.fov = 80;
+if (typeof settings.fov !== "number" || settings.fov < 40 || settings.fov > 110) settings.fov = 75;
 function saveSettings() {
   localStorage.setItem("silence.settings", JSON.stringify(settings));
 }
@@ -155,15 +155,79 @@ function applyFuse(f) {
   f.glow.visible = false;
   game.collected++;
   audio.blip(1040, 0.16);
-  if (game.collected >= FUSE_TOTAL) {
+  ui.toast(`차단기 ${game.collected}/${FUSE_TOTAL} 재기동`, 1600);
+  updateExitPower();
+  return true;
+}
+
+// 탈출 조건: 퓨즈 전부 + 부가 미션 전부 → 격리 철문 개방
+function updateExitPower() {
+  if (game.exitPowered) return;
+  const fuseDone = game.collected >= FUSE_TOTAL;
+  const misDone = missionsAllDone();
+  if (fuseDone && misDone) {
     game.exitPowered = true;
     world.setExitPowered(true);
-    ui.toast("전원 복구 — 격리 철문의 잠금이 풀렸다", 3600);
+    ui.toast("전원 복구 + 부가 미션 완수 — 격리 철문의 잠금이 풀렸다", 4000);
     ui.setObjective("격리 철문으로 탈출하라", game.collected, FUSE_TOTAL, null);
-  } else {
-    ui.toast(`차단기 ${game.collected}/${FUSE_TOTAL} 재기동`, 1600);
+  } else if (fuseDone) {
+    ui.toast("차단기 전부 재기동 — 부가 미션도 모두 완수해야 격리 철문이 열린다", 3400);
+  } else if (misDone) {
+    ui.toast("부가 미션 완료 — 남은 차단기를 찾아 전원을 복구하라", 3000);
   }
-  return true;
+}
+
+let missionHudCache = "";
+function syncMissionHud() {
+  const spots = world.missionSpots || [];
+  const kinds = ["scout", "tape", "beacon"];
+  const els = { scout: "mis-scout", tape: "mis-tape", beacon: "mis-beacon" };
+  let key = "";
+  const texts = {};
+  for (const k of kinds) {
+    const total = spots.filter(s => s.kind === k).length;
+    const done = spots.filter(s => s.kind === k && s.done).length;
+    texts[k] = done + "/" + total;
+    key += k + texts[k] + ";";
+  }
+  if (key === missionHudCache) return;
+  missionHudCache = key;
+  for (const k of kinds) {
+    const el = document.getElementById(els[k]);
+    if (el) el.textContent = texts[k];
+  }
+}
+
+function missionDoneCount() {
+  return (world.missionSpots || []).filter(s => s.done).length;
+}
+
+function missionsAllDone() {
+  const spots = world.missionSpots || [];
+  return spots.length > 0 && spots.every(s => s.done);
+}
+
+function handleMission(spot) {
+  if (!spot || spot.done) return;
+  spot.done = true;
+  if (spot.mesh) spot.mesh.visible = false;
+  if (spot.kind === "scout") {
+    // 관측 기록기 — 기록 직후 작동음이 시설에 울려 퍼진다 (위험 요소)
+    noise.addImpulse(0.5, spot.x, spot.z, "scout");
+    ui.toast("관측 기록 완료 — 기계음이 울렸다", 2600);
+    audio.blip(1100, 0.18);
+  } else if (spot.kind === "beacon") {
+    // 경보 비콘 정지 — 사이렌이 잠깐 울리고 잠잠해진다
+    noise.addImpulse(0.4, spot.x, spot.z, "alarm");
+    ui.toast("경보기 정지 — 사이렌이 잠잠해졌다", 2400);
+    audio.blip(560, 0.2);
+  } else {
+    noise.addImpulse(0.2, spot.x, spot.z, "search");
+    ui.toast("현장 테이프 회수", 2400);
+    audio.blip(980, 0.14);
+  }
+  syncMissionHud();
+  updateExitPower();
 }
 
 function applyDoorOpen(door) {
@@ -228,6 +292,13 @@ function handleRemoteAct(from, act) {
       winGame();
       break;
     }
+    case "mission": {
+      const s = world.missionSpots[act.i];
+      if (!s || s.done) break;
+      handleMission(s);
+      mpEvent({ k: "mission", i: act.i });
+      break;
+    }
     case "trap": {
       if (world.traps.length >= CONFIG.trap.maxPlaced) break;
       if (trapExists(act.x, act.z)) break;
@@ -264,6 +335,16 @@ function handleNetEvent(ev) {
   if (!ev) return;
   switch (ev.k) {
     case "fuse": { const f = world.fuses[ev.i]; if (f) applyFuse(f); break; }
+    case "mission": {
+      const s = world.missionSpots[ev.i];
+      if (s && !s.done) {
+        s.done = true;
+        if (s.mesh) s.mesh.visible = false;
+        syncMissionHud();
+        updateExitPower();
+      }
+      break;
+    }
     case "door": { const d = world.lockedDoors[ev.i]; if (d) applyDoorOpen(d); break; }
     case "drawer": {
       const d = world.drawers[ev.i];
@@ -328,6 +409,18 @@ function applySnapshot(s) {
   // 퓨즈
   const fs = s.fuses || [];
   for (let i = 0; i < world.fuses.length; i++) if (fs[i]) applyFuse(world.fuses[i]);
+  // 부가 미션
+  const ms = s.missions || [];
+  let misChanged = false;
+  for (let i = 0; i < (world.missionSpots || []).length; i++) {
+    const sp = world.missionSpots[i];
+    if (ms[i] && sp && !sp.done) {
+      sp.done = true;
+      if (sp.mesh) sp.mesh.visible = false;
+      misChanged = true;
+    }
+  }
+  if (misChanged) { syncMissionHud(); updateExitPower(); }
   // 잠긴 문
   const ds = s.doors || [];
   for (let i = 0; i < world.lockedDoors.length; i++) if (ds[i]) applyDoorOpen(world.lockedDoors[i]);
@@ -455,6 +548,7 @@ function buildSnapshot() {
     doors: world.lockedDoors.map((d) => (d.open ? 1 : 0)),
     drawers: world.drawers.map((d) => ((d.opened ? 1 : 0) | (d.looted ? 2 : 0))),
     traps: world.traps.map((t) => [+t.x.toFixed(2), +t.z.toFixed(2)]),
+    missions: (world.missionSpots || []).map((s) => (s.done ? 1 : 0)),
     exit: game.exitPowered ? 1 : 0
   };
 }
@@ -737,6 +831,8 @@ function startGame() {
   player.inventory.add("trap", "덫", CONFIG.trap.startCount);
   world.resetInteractive();
   world.setNightmareLoot(settings.difficulty === "nightmare");
+  missionHudCache = "";
+  syncMissionHud();
   monster.rebuildGrid();
   ui.setInventory(player.inventory, -1);
   if (world.chargeStation) world.chargeStation.setActive(false);
@@ -754,7 +850,7 @@ function startGame() {
   ui.toggleMinimap(false);
   ui.setFlashlight(true);
   ui.setHp(player.hp, player.maxHp);
-  ui.setObjective(`차단기 ${FUSE_TOTAL}개를 찾아 전원을 복구하세요`, 0, FUSE_TOTAL, null);
+  ui.setObjective(`차단기 ${FUSE_TOTAL}개 + 부가 미션 ${world.missionSpots.length}개를 모두 완수하세요`, 0, FUSE_TOTAL, null);
   ui.toast(`[${DIFFICULTY[settings.difficulty]?.label || "보통"}] 괴물이 너의 숨을 느꼈다. 조용히 움직여라.`, 3400);
   if (settings.difficulty === "nightmare") {
     ui.toast("악몽: 지도 없음 · 충전소 없음 · 괴물 2마리 — 손전등이 소진되면 영구 고장", 4200);
@@ -883,6 +979,7 @@ function finishScare() {
   clearEffects();
   document.getElementById("stat-time").textContent = formatTime(game.elapsed);
   document.getElementById("stat-fuse").textContent = `${game.collected}/${FUSE_TOTAL}`;
+  document.getElementById("stat-missions").textContent = `${missionDoneCount()}/${(world.missionSpots || []).length}`;
   ui.show(ui.death);
 }
 
@@ -929,6 +1026,7 @@ function winGame() {
   unlockPointer();
   document.getElementById("win-time").textContent = formatTime(game.elapsed);
   document.getElementById("win-noise").textContent = noise.loudCount || 0;
+  document.getElementById("win-missions").textContent = `${missionDoneCount()}/${(world.missionSpots || []).length}`;
   ui.show(ui.win);
   ui.setHudVisible(false);
   if (net.active) {
@@ -1004,9 +1102,23 @@ function updateObjectives(dt) {
     if (d < nd) { nd = d; nearest = f; }
   }
 
-  // 상호작용 대상 — 우선순위(높을수록 나중에 덮어씀): 서랍 < 은신처 < 잠긴 문 < 퓨즈(목표물) < 게이트
+  // 상호작용 대상 — 우선순위(높을수록 나중에 덮어씀): 부가 미션 < 서랍 < 은신처 < 잠긴 문 < 퓨즈(목표물) < 게이트
   let target = null;
   let label = "";
+
+  // 부가 미션 지점 (관측 기록대 / 현장 테이프 / 경보 비콘) — 서랍·은신처·퓨즈에 모두 밀림
+  let ms = null, msD = Infinity;
+  for (const s of world.missionSpots) {
+    if (s.done) continue;
+    const d = Math.hypot(s.x - player.x, s.z - player.z);
+    if (d < msD) { msD = d; ms = s; }
+  }
+  if (ms && msD < CONFIG.interaction.pickupRange) {
+    target = { type: "mission", mission: ms };
+    label = ms.kind === "scout" ? "관측 지점 기록"
+      : ms.kind === "beacon" ? "경보 비콘 정지"
+      : "현장 테이프 회수";
+  }
 
   // 서랍 (닫힘→열기 / 열림+아이템→줍기 / 열림+빈 or 획득완료→닫기)
   let nearDrawer = null, drD = Infinity;
@@ -1083,6 +1195,7 @@ function updateObjectives(dt) {
       game.interactTarget.hide === target.hide &&
       game.interactTarget.drawer === target.drawer &&
       game.interactTarget.door === target.door &&
+      game.interactTarget.mission === target.mission &&
       game.interactTarget.phase === target.phase;
     if (!same) game.interactHold = 0;
     game.interactTarget = target;
@@ -1091,6 +1204,7 @@ function updateObjectives(dt) {
       : target.type === "hide" ? CONFIG.interaction.hideTime
       : target.type === "drawer" ? (target.phase === "take" ? 0.45 : 0.7)
       : target.type === "lockedDoor" ? 0.8
+      : target.type === "mission" ? 1.2
       : 1.4;
     game.interactHold += dt / time;
     if (game.interactHold >= 1) {
@@ -1107,6 +1221,10 @@ function updateObjectives(dt) {
       }
       else if (target.type === "lockedDoor") {
         tryOpenDoor(target.door);
+      }
+      else if (target.type === "mission") {
+        if (mpClient()) mpAct({ k: "mission", i: world.missionSpots.indexOf(target.mission) });
+        else handleMission(target.mission);
       }
       else {
         if (mpClient()) mpAct({ k: "gate" });
@@ -1894,6 +2012,6 @@ ui.setFlashlight(true);
 ui.setHudVisible(false);
 
 // 디버그/테스트용 훅
-  window.__silence = { game, player, monster, get monster2() { return monster2; }, get monster2Active() { return monster2Active; }, startGame, winGame, noise, world, ui, settings, STATE, input, audio, renderer, camera, scene, THREE, DIFFICULTY, CONFIG, applyDifficulty, smokes, decoys, primaryAction, situationF, handleDigit, stowHeld, equipSlot, useSlot, keypadPress, openKeypad, closeKeypad, updateTraps, net, respawnLocal, applySnapshot, buildSnapshot, buildPose, handleNetEvent, handleRemoteAct, trapGone };
+  window.__silence = { game, player, monster, get monster2() { return monster2; }, get monster2Active() { return monster2Active; }, startGame, winGame, noise, world, ui, settings, STATE, input, audio, renderer, camera, scene, THREE, DIFFICULTY, CONFIG, applyDifficulty, smokes, decoys, primaryAction, situationF, handleDigit, stowHeld, equipSlot, useSlot, keypadPress, openKeypad, closeKeypad, updateTraps, updateExitPower, missionsAllDone, missionDoneCount, net, respawnLocal, applySnapshot, buildSnapshot, buildPose, handleNetEvent, handleRemoteAct, trapGone };
 
 loop();

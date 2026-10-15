@@ -33,6 +33,7 @@ export class World {
     this.drawers = [];
     this.lockedDoors = [];
     this.traps = [];  // 배치된 덫 {x, z, mesh}
+    this.missionSpots = [];  // 부가 미션 (관측/테이프/비콘) {kind, x, z, done, mesh}
     this.lamps = [];
     this.walls = [];  // 미니맵용 벽 선분
     this.rooms = [];  // 미니맵용 방 목록
@@ -54,6 +55,7 @@ export class World {
     this._buildFog();
     this._buildFuses();
     this._buildDoorsAndLoot();
+    this._buildMissions();
     this._buildGate();
     this._buildProps();
     this._buildWeather();
@@ -1199,6 +1201,86 @@ export class World {
     }
   }
 
+  /* ---------- 부가 미션 (관측 5 + 테이프 5 + 비콘 3 = 13) ---------- */
+  _buildMissions() {
+    this.missionSpots = [];
+    const cands = [
+      // 관측 기록대 (5)
+      { kind: "scout", x: -38, z: -40 },  // 기계창고
+      { kind: "scout", x: 33, z: -42 },   // 발전기실
+      { kind: "scout", x: -29, z: 14 },   // 숙소
+      { kind: "scout", x: -40, z: 2 },    // 서측 폐창고
+      { kind: "scout", x: 40, z: 2 },     // 동측 폐창고
+      // 현장 테이프 (5)
+      { kind: "tape", x: -11.5, z: -42 }, // 서기록실
+      { kind: "tape", x: -15.75, z: -17 },// 로비
+      { kind: "tape", x: 15.75, z: -4 },  // 사무실
+      { kind: "tape", x: 0, z: 14 },      // 현관
+      { kind: "tape", x: 40, z: -20 },    // 저장동
+      // 경보 비콘 (3)
+      { kind: "beacon", x: -40, z: -12 }, // 통신실 북쪽
+      { kind: "beacon", x: 40, z: -12 },  // 저장동 북쪽
+      { kind: "beacon", x: 29, z: 14 }    // 보급실
+    ];
+    for (const cand of cands) {
+      let x = cand.x, z = cand.z;
+      // 차단 지점이면 결정적 나선 탐색으로 이동
+      for (let r = 1.5; r <= 6.1 && this.isBlockedPoint(x, z, 0.35); r += 1.5) {
+        const a = (r * 2.4 + this.missionSpots.length * 1.7) % (Math.PI * 2);
+        x = cand.x + Math.cos(a) * r;
+        z = cand.z + Math.sin(a) * r;
+      }
+      if (this.inSafeZone(x, z) || this.isBlockedPoint(x, z, 0.35)) continue;
+      const y = this.heightAt(x, z);
+      const g = new THREE.Group();
+      if (cand.kind === "scout") {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.9, 8),
+          new THREE.MeshStandardMaterial({ color: 0x3a4550, roughness: 0.6, metalness: 0.4 }));
+        post.position.y = 0.45;
+        const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8),
+          new THREE.MeshStandardMaterial({ color: 0x5ad0ff, emissive: 0x3399ff, emissiveIntensity: 2.2 }));
+        lamp.material.fog = false;
+        lamp.position.y = 0.95;
+        g.add(post, lamp);
+      } else if (cand.kind === "beacon") {
+        // 경보 비콘 — 붉은 혈통 + 발밑 테이프 링 (E 홉으로 정지)
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 1.1, 8),
+          new THREE.MeshStandardMaterial({ color: 0x4a3236, roughness: 0.55, metalness: 0.5 }));
+        post.position.y = 0.55;
+        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8),
+          new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0xcc1111, emissiveIntensity: 3.0 }));
+        bulb.material.fog = false;
+        bulb.position.y = 1.18;
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.03, 6, 14),
+          new THREE.MeshStandardMaterial({ color: 0x662222, emissive: 0x881111, emissiveIntensity: 1.2 }));
+        ring.material.fog = false;
+        ring.rotation.x = Math.PI / 2;
+        ring.position.y = 0.06;
+        g.add(post, bulb, ring);
+      } else {
+        const box = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 0.16),
+          new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.55 }));
+        box.position.y = 0.07;
+        const dot = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6),
+          new THREE.MeshStandardMaterial({ color: 0xffb347, emissive: 0xff8800, emissiveIntensity: 2.5 }));
+        dot.material.fog = false;
+        dot.position.set(0, 0.16, 0.06);
+        g.add(box, dot);
+      }
+      g.position.set(x, y, z);
+      g.traverse(o => { o.castShadow = true; });
+      this.scene.add(g);
+      this.missionSpots.push({ kind: cand.kind, x, z, done: false, mesh: g });
+    }
+  }
+
+  resetMissions() {
+    for (const s of this.missionSpots) {
+      s.done = false;
+      if (s.mesh) s.mesh.visible = true;
+    }
+  }
+
   /* ---------- 서랍 / 잠긴 문 / 전리품 ---------- */
   _buildDoorsAndLoot() {
     // 서랍: lootId는 Inventory ITEM id와 일치. 열기/닫기/획득은 독립 상태.
@@ -1431,6 +1513,7 @@ export class World {
   resetInteractive() {
     this.clearTraps();
     this.randomizeDrawerLoot();
+    this.resetMissions();
     for (const d of this.drawers) {
       d.opened = false;
       d.anim = 0;
