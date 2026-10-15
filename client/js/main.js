@@ -955,7 +955,7 @@ function onCaught(m) {
     player.addCameraShake(0.9);
     m.forceRecover();
     // 도망 기회를 주기 위해 즉시 추격을 유발하는 큰 소리는 내지 않는다
-    noise.addImpulse(0.35, player.x, player.z, "hurt");
+    noise.addImpulse(0.35, player.x, player.z, "hurt", player.y);
     audio.attackScreech();
     ui.flashDamage();
     ui.setHp(player.hp, player.maxHp);
@@ -1210,7 +1210,7 @@ function updateObjectives(dt) {
     if (game.interactHold >= 1) {
       if (target.type === "fuse") {
         if (mpClient()) {
-          noise.addImpulse(0.2, player.x, player.z, "pickup");
+          noise.addImpulse(0.2, player.x, player.z, "pickup", player.y);
           mpAct({ k: "fuse", i: world.fuses.indexOf(target.fuse) });
         } else collectFuse(target.fuse);
       }
@@ -1252,7 +1252,7 @@ function updateObjectives(dt) {
 }
 
 function collectFuse(f) {
-  noise.addImpulse(0.2, player.x, player.z, "pickup");
+  noise.addImpulse(0.2, player.x, player.z, "pickup", player.y);
   if (applyFuse(f)) mpEvent({ k: "fuse", i: world.fuses.indexOf(f) });
 }
 
@@ -1270,13 +1270,13 @@ function requestDrawer(d, phase) {
   if (phase === "take") {
     if (!d.opened || d.looted || !d.lootId) return;
     if (!player.inventory.canAdd(d.lootId)) { audio.blip(200, 0.12); ui.showInvEmpty(); return; }
-    noise.addImpulse(0.28, player.x, player.z, "search");
+    noise.addImpulse(0.28, player.x, player.z, "search", player.y);
     mpAct({ k: "take", i });
     ui.toast(`${d.lootName} 집기 요청…`, 1200);
     return;
   }
   if (phase === "open" ? d.opened : !d.opened) return;
-  noise.addImpulse(0.16, player.x, player.z, "search");
+  noise.addImpulse(0.16, player.x, player.z, "search", player.y);
   if (phase === "open" && !d.lootId) ui.toast("서랍이 비어 있다", 1400);
   mpAct({ k: "drawer", i, open: phase === "open" });
 }
@@ -1288,7 +1288,7 @@ function handleDrawer(d, phase) {
     if (d.opened || d.busy) return;
     world.toggleDrawer(d);
     audio.blip(520, 0.1);
-    noise.addImpulse(0.16, player.x, player.z, "search");
+    noise.addImpulse(0.16, player.x, player.z, "search", player.y);
     if (!d.lootId) ui.toast("서랍이 비어 있다", 1400);
     return;
   }
@@ -1304,7 +1304,7 @@ function handleDrawer(d, phase) {
     world.lootDrawer(d);
     const def = getItemDef(d.lootId);
     audio.blip(d.lootId.startsWith("key_") ? 1320 : 980, 0.16);
-    noise.addImpulse(0.28, player.x, player.z, "search");
+    noise.addImpulse(0.28, player.x, player.z, "search", player.y);
     ui.setInventory(player.inventory);
     ui.showItemDetail(def);
     if (d.lootId === "key_shed") ui.toast("획득: 창고 열쇠 — 잠긴 창고 문에 사용한다", 3000);
@@ -1344,7 +1344,7 @@ function tryOpenDoor(door) {
 function openDoor(door) {
   if (!door || door.open) return;
   if (mpClient()) {
-    noise.addImpulse(0.9, player.x, player.z, "door");
+    noise.addImpulse(0.9, player.x, player.z, "door", player.y);
     mpAct({ k: "door", i: world.lockedDoors.indexOf(door) });
     ui.toast(`${door.label} 열기 요청…`, 1300);
     return;
@@ -1353,7 +1353,7 @@ function openDoor(door) {
 }
 
 function finishOpenDoor(door) {
-  noise.addImpulse(0.9, player.x, player.z, "door");
+  noise.addImpulse(0.9, player.x, player.z, "door", player.y);
   if (applyDoorOpen(door)) mpEvent({ k: "door", i: world.lockedDoors.indexOf(door) });
 }
 
@@ -1604,7 +1604,7 @@ function useSlot(i) {
     game.batonReadyAt = now + CONFIG.stun.cooldown * 1000;
     audio.blip(1600, 0.08);
     setTimeout(() => audio.blip(1900, 0.06), 60);
-    noise.addImpulse(0.35, player.x, player.z, "zap");
+    noise.addImpulse(0.35, player.x, player.z, "zap", player.y);
     if (mpClient()) {
       // 판정은 호스트가 한다 — 결과는 stunres 이벤트로 돌아온다
       mpAct({ k: "stun", x: player.x, z: player.z });

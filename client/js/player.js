@@ -469,7 +469,7 @@ export class Player {
       this.wasAirborne = true;
       this.stamina = Math.max(0, this.stamina - S.jumpCost);
       if (!this.crouching) {
-        this.noise.addImpulse(CONFIG.noise.jump, this.x, this.z, "jump");
+        this.noise.addImpulse(CONFIG.noise.jump, this.x, this.z, "jump", this.y);
         this.audio.jump();
       }
     }
@@ -479,16 +479,16 @@ export class Player {
     this.z += this.vz * dt;
     this.y += this.vy * dt;
 
-    const c = w.collide(this.x, this.z, CONFIG.playerRadius);
+    const c = w.collide(this.x, this.z, CONFIG.playerRadius, this.y, 1.7);
     this.x = c.x; this.z = c.z;
 
-    const gY2 = w.heightAt(this.x, this.z);
+    const gY2 = w.groundHeightAt(this.x, this.z, this.y);
     if (this.y <= gY2) {
       const impact = -this.vy;
       this.y = gY2;
       if (this.wasAirborne && impact > 1.5) {
         const intensity = clamp((impact - 2.0) / 7.0, 0, 1) * (CONFIG.noise.landMax - CONFIG.noise.landMin) + CONFIG.noise.landMin;
-        this.noise.addImpulse(intensity, this.x, this.z, "land");
+        this.noise.addImpulse(intensity, this.x, this.z, "land", this.y);
         this.audio.land(clamp(intensity, 0, 1));
         this._cameraShake = Math.min(0.5, intensity * 0.35);
       }
@@ -520,7 +520,7 @@ export class Player {
       moveNoise *= clamp(this.moveSpeedActual / baseSpeed, 0.4, 1);
     }
     this.noise.setMovement(moveNoise);
-    this.noise.setMicOrigin(this.x, this.z);
+    this.noise.setMicOrigin(this.x, this.z, this.y);
 
     // 발소리
     if (this.onGround && this.moveSpeedActual > 0.5) {
@@ -602,10 +602,10 @@ export class Player {
     // 밖으로 안전하게 배치
     const fx = -Math.sin(spot.yaw), fz = -Math.cos(spot.yaw);
     let px = spot.x + fx * 1.0, pz = spot.z + fz * 1.0;
-    const c = this.world.collide(px, pz, CONFIG.playerRadius);
+    const c = this.world.collide(px, pz, CONFIG.playerRadius, spot.y, 1.7);
     px = c.x; pz = c.z;
     this.x = px; this.z = pz;
-    this.y = this.world.heightAt(px, pz);
+    this.y = this.world.groundHeightAt(px, pz, spot.y);
     this.vx = this.vy = this.vz = 0;
     this.audio.blip(420, 0.1);
   }
@@ -642,7 +642,7 @@ export class Player {
     if (this.crouching) { label = "crouch"; imp = cfgN.stepImpulse.crouch; }
     else if (this.sprinting) { label = "sprint"; imp = cfgN.stepImpulse.sprint; }
     else { label = "walk"; imp = cfgN.stepImpulse.walk; }
-    this.noise.addStep(imp, this.x, this.z, label);
+    this.noise.addStep(imp, this.x, this.z, label, this.y);
     this.audio.footstep(label);
   }
 

@@ -71,16 +71,18 @@ export class Monster {
 
     this.onCatch = null;
 
-    this.grid = new Grid(world, 1.8, this.radius + 0.2);
+    this.grid = new Grid(world, 1.8, this.radius + 0.2, -3, 2.5);
+    // 2층 밴드는 4.3부터 — 하부벽 상단(4.2)이 출입문 셀을 막지 않게
+    this.grid2 = new Grid(world, 1.8, this.radius + 0.2, 4.3, 8.5);
     this._buildModel();
     this._syncModel();
   }
 
   // 월드 구조(예: 잠긴 문 개방)가 바뀌면 경로 탐색 격자를 다시 만든다
   rebuildGrid() {
-    this.grid = new Grid(this.world, 1.8, this.radius + 0.2);
+    this.grid = new Grid(this.world, 1.8, this.radius + 0.2, -3, 2.5);
+    this.grid2 = new Grid(this.world, 1.8, this.radius + 0.2, 4.3, 8.5);
     this._path = [];
-    this._repathTimer = 0;
   }
 
   /* ================= 모델 ================= */
@@ -306,6 +308,9 @@ export class Monster {
     // 안전 구역: 시각 인식 완전 차단
     if (player.inSafeZone) return false;
     if (player.hidden) return false;
+    // 다른 층: 바닥/천장이 가로막아 볼 수 없다
+    const py = player.y !== undefined ? player.y : this.world.heightAt(player.x, player.z);
+    if (Math.abs(py - this.y) > 2.5) return false;
     const d = Math.hypot(player.x - this.x, player.z - this.z);
     const chasing = this.state === STATE.CHASE || this.state === STATE.ATTACK;
     const sight = chasing ? CONFIG.monster.sightChase : CONFIG.monster.sightBase;
@@ -317,13 +322,14 @@ export class Monster {
     const facing = fx * nx + fz * nz;
     if (d > 3 && !chasing && facing < CONFIG.monster.sightFov) return false;
     if (this._smokeBlocks(this.x, this.z, player.x, player.z)) return false;
-    return !this.world.lineBlocked(this.x, this.z, player.x, player.z);
+    return !this.world.lineBlocked(this.x, this.z, player.x, player.z, this.y + 1.6, py + 1.6);
   }
 
   // 벽+연막 없이 바로 보이는가 (근접 감지용)
-  _clearLOS(x0, z0, x1, z1) {
+  _clearLOS(x0, z0, x1, z1, y1 = null) {
     if (this._smokeBlocks(x0, z0, x1, z1)) return false;
-    return !this.world.lineBlocked(x0, z0, x1, z1);
+    const ey = (y1 !== undefined && y1 !== null) ? y1 : this.y + 1.6;
+    return !this.world.lineBlocked(x0, z0, x1, z1, this.y + 1.6, ey);
   }
 
   _inSmoke(x, z) {
@@ -374,6 +380,9 @@ export class Monster {
       if (e.intensity < cfg.hearMinIntensity) continue;
       // 안전 구역 소음 무시
       if (this.world.inSafeZone(e.x, e.z)) continue;
+      // 다른 층 소음 무시 (y 미기록 이벤트는 지면 높이로 간주)
+      const ey = (e.y !== undefined && e.y !== null) ? e.y : this.world.heightAt(e.x, e.z);
+      if (Math.abs(ey - this.y) > 2.5) continue;
       // 연막 소음 마스킹: 소음이 연막 안에서 났는데 괴물이 연막 밖이면 못 들음
       if (this._inSmoke(e.x, e.z) && !this._inSmoke(this.x, this.z)) continue;
       const d = Math.hypot(e.x - this.x, e.z - this.z);
@@ -393,7 +402,7 @@ export class Monster {
   _reactToNoise(best) {
     const cfg = CONFIG.monster;
     // 조사 목표는 '소리가 난 지점' (플레이어가 이미 이동했을 수 있음)
-    this.lastKnown = { x: best.e.x, z: best.e.z };
+    this.lastKnown = { x: best.e.x, z: best.e.z, y: (best.e.y !== undefined && best.e.y !== null) ? best.e.y : this.y };
     this.lastKnownValid = true;
     this.lastKnownTime = this.time;
     this.lostTimer = 0;
@@ -474,7 +483,9 @@ export class Monster {
   // 매복 기습: 가까이 온 플레이어에게 덮친다
   _pounce(player) {
     const cfg = CONFIG.monster;
-    this.lastKnown = { x: player.x, z: player.z };
+    const pyP = (player.y !== undefined && player.y !== null) ? player.y : this.y;
+    if (Math.abs(pyP - this.y) > 2.5) return;  // 다른 층에는 덮치지 않음
+    this.lastKnown = { x: player.x, z: player.z, y: pyP };
     this.lastKnownValid = true;
     this.lastKnownTime = this.time;
     this.sawPlayerTime = this.time;
@@ -539,7 +550,7 @@ export class Monster {
         this.seenHide = { spot, time: this.time };
         this.inspectSpot = null;
         this._inspectTimer = 0;
-        this.lastKnown = { x: spot.x, z: spot.z };
+        this.lastKnown = { x: spot.x, z: spot.z, y: (spot.y !== undefined ? spot.y : this.y) };
         this.lastKnownValid = true;
         this.lastKnownTime = this.time;
         this.suspicion = 1.6;
@@ -566,15 +577,17 @@ export class Monster {
     const hearBest = playerSafe ? null : this._consumeNoise(sharedEvents);
     const sees = playerSafe ? false : this._seen(player);
     const dToPlayer = Math.hypot(player.x - this.x, player.z - this.z);
-    // 근접 감지: 벽/연막 뒤(다른 방)에서는 느끼지 못한다
+    // 근접 감지: 벽/연막 뒤(다른 방)·다른 층에서는 느끼지 못한다
+    const pyV = (player.y !== undefined && player.y !== null) ? player.y : this.y;
     const veryClose = !player.hidden && !playerSafe && dToPlayer < cfg.senseRadius &&
-      this._clearLOS(this.x, this.z, player.x, player.z);
+      Math.abs(pyV - this.y) <= 2.5 &&
+      this._clearLOS(this.x, this.z, player.x, player.z, pyV + 1.6);
 
     if (hearBest) this._reactToNoise(hearBest);
 
     // 직접 목격 (안전 구역에서는 절대 실행되지 않음)
     if (sees || veryClose) {
-      this.lastKnown = { x: player.x, z: player.z };
+      this.lastKnown = { x: player.x, z: player.z, y: pyV };
       this.lastKnownValid = true;
       this.lastKnownTime = this.time;
       this.sawPlayerTime = this.time;
@@ -767,9 +780,11 @@ export class Monster {
       this.yaw = angleLerp(this.yaw, desired, clamp(cfg.turnLerp * 0.6 * dt, 0, 1));
     }
 
-    // 잡기 판정 (안전지대 밖, 은신 중 아닌 경우에만 즉시) — 벽 너머(다른 방)에서는 못 잡음
+    // 잡기 판정 (안전지대 밖, 은신 중 아닌 경우에만 즉시) — 벽 너머(다른 방)·다른 층에서는 못 잡음
+    const pyCatch = player.y !== undefined ? player.y : this.world.heightAt(player.x, player.z);
     if (!playerSafe && !player.hidden && !this._caught && dToPlayer < cfg.catchRadius &&
-        !this.world.lineBlocked(this.x, this.z, player.x, player.z) && this.onCatch) {
+        Math.abs(pyCatch - this.y) <= 2.5 &&
+        !this.world.lineBlocked(this.x, this.z, player.x, player.z, this.y + 1.6, pyCatch + 1.6) && this.onCatch) {
       this._caught = true;
       this._lastCatchTime = this.time;
       this.onCatch();
@@ -839,7 +854,7 @@ export class Monster {
     const occupied = player.hidden && player.hideSpot === spot;
     // "들킨 상태"의 은신처 → 끝내 찾아내어 밖으로 끌어내고 공격
     if (occupied && this.knownHide === spot) {
-      this.lastKnown = { x: spot.x, z: spot.z };
+      this.lastKnown = { x: spot.x, z: spot.z, y: (spot.y !== undefined ? spot.y : this.y) };
       this.lastKnownValid = true;
       this.lastKnownTime = this.time;
       if (this.seenHide && this.seenHide.spot === spot) this.seenHide = null;
@@ -879,7 +894,7 @@ export class Monster {
       const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
       let nx = this.x + fx * cfg.attackSpeed * dt;
       let nz = this.z + fz * cfg.attackSpeed * dt;
-      const c = this.world.collide(nx, nz, this.radius);
+      const c = this.world.collide(nx, nz, this.radius, this.y, 1.9);
       nx = c.x; nz = c.z;
       const dashMoved = Math.hypot(nx - this.x, nz - this.z);
       if (dashMoved < cfg.attackSpeed * dt * 0.25) {
@@ -894,7 +909,8 @@ export class Monster {
       this.moveSpeedActual = 0;
     }
     if (!playerSafe && !player.hidden && !this._caught && d < cfg.catchRadius && this._attackPhase > cfg.attackWindup &&
-        !this.world.lineBlocked(this.x, this.z, player.x, player.z) && this.onCatch) {
+        Math.abs((player.y !== undefined ? player.y : this.y) - this.y) <= 2.5 &&
+        !this.world.lineBlocked(this.x, this.z, player.x, player.z, this.y + 1.6, (player.y !== undefined ? player.y : this.y) + 1.6) && this.onCatch) {
       this._caught = true;
       this._lastCatchTime = this.time;
       this.onCatch();
@@ -917,7 +933,10 @@ export class Monster {
 
   _nearTarget(r = 1.0) {
     const t = this.target;
-    return Math.hypot(t.x - this.x, t.z - this.z) < r;
+    if (Math.hypot(t.x - this.x, t.z - this.z) >= r) return false;
+    // 다른 층 목표는 도착으로 치지 않는다
+    if (t.y !== undefined && t.y !== null && Math.abs(t.y - this.y) > 1.5) return false;
+    return true;
   }
 
   _pickRoamTarget() {
@@ -926,6 +945,15 @@ export class Monster {
     const rMin = cfg.roamMin !== undefined ? cfg.roamMin : 6;
     const rMax = cfg.roamMax !== undefined ? cfg.roamMax : CONFIG.worldRadius - 10;
     const rEdge = CONFIG.worldRadius - 4;
+    // 가끔 2층 관측실 주변을 순찰 (deck 위 점 + 계단 경유)
+    if (Math.random() < 0.2) {
+      const x = rand(19, 25), z = rand(22, 30);
+      if (!this.world.inSafeZone(x, z) && !this.world.isBlockedPoint(x, z, this.radius, 4.3, 8.5)) {
+        this.target = { x, z, y: 4.2 };
+        this._path = []; this._repathTimer = 0;
+        return;
+      }
+    }
     for (let tries = 0; tries < 24; tries++) {
       const a = rand(0, Math.PI * 2);
       const r = rand(rMin, rMax);
@@ -944,7 +972,7 @@ export class Monster {
       }
       if (this.world.inSafeZone(x, z)) continue;
       if (!this.world.isBlockedPoint(x, z, this.radius)) {
-        this.target = { x, z };
+        this.target = { x, z, y: this.world.groundHeightAt(x, z, this.y) };
         this._path = []; this._repathTimer = 0;
         return;
       }
@@ -957,12 +985,13 @@ export class Monster {
       r *= 0.7;
       x = this.x + Math.cos(a) * r; z = this.z + Math.sin(a) * r;
     }
-    this.target = { x, z };
+    this.target = { x, z, y: this.world.groundHeightAt(x, z, this.y) };
     this._path = []; this._repathTimer = 0;
   }
 
   _pickSearchTarget() {
     const cfg = CONFIG.monster;
+    const lkY = (this.lastKnown.y !== undefined && this.lastKnown.y !== null) ? this.lastKnown.y : this.y;
     // 가끔 은신처를 조사
     if (Math.random() < cfg.hideInspectChance && this.world.hidingSpots.length) {
       const near = this.world.hidingSpots
@@ -971,7 +1000,7 @@ export class Monster {
         .slice(0, 4);
       const pick = near[Math.floor(Math.random() * near.length)].s;
       this.inspectSpot = pick;
-      this._searchTarget = { x: pick.x, z: pick.z };
+      this._searchTarget = { x: pick.x, z: pick.z, y: (pick.y !== undefined ? pick.y : lkY) };
       return;
     }
     this.inspectSpot = null;
@@ -982,10 +1011,10 @@ export class Monster {
       let tz = this.lastKnown.z + Math.sin(a) * r;
       if (this.world.inSafeZone(tx, tz)) continue;
       if (this.world.isBlockedPoint(tx, tz, this.radius)) { tx = this.lastKnown.x; tz = this.lastKnown.z; }
-      this._searchTarget = { x: tx, z: tz };
+      this._searchTarget = { x: tx, z: tz, y: this.world.groundHeightAt(tx, tz, lkY) };
       return;
     }
-    this._searchTarget = { x: this.lastKnown.x, z: this.lastKnown.z };
+    this._searchTarget = { x: this.lastKnown.x, z: this.lastKnown.z, y: lkY };
   }
 
   _move(dt, speed) {
@@ -1018,7 +1047,7 @@ export class Monster {
 
     let nx = this.x + dirx * speed * dt;
     let nz = this.z + dirz * speed * dt;
-    const c = this.world.collide(nx, nz, this.radius);
+    const c = this.world.collide(nx, nz, this.radius, this.y, 1.9);
     nx = c.x; nz = c.z;
 
     // 안전지대 진입 금지
@@ -1028,9 +1057,9 @@ export class Monster {
     // 축 분리 슬라이딩: 대각선으로 벽에 박히면 X·Z축 각각으로 미끄러지듯 이동을 시도한다.
     // (collide는 밀어내기만 하고 슬라이딩을 안 하므로 여기서 보정)
     if (moved < speed * dt * 0.35) {
-      const tryX = this.world.collide(this.x + dirx * speed * dt, this.z, this.radius);
+      const tryX = this.world.collide(this.x + dirx * speed * dt, this.z, this.radius, this.y, 1.9);
       const mx = Math.hypot(tryX.x - this.x, tryX.z - this.z);
-      const tryZ = this.world.collide(this.x, this.z + dirz * speed * dt, this.radius);
+      const tryZ = this.world.collide(this.x, this.z + dirz * speed * dt, this.radius, this.y, 1.9);
       const mz = Math.hypot(tryZ.x - this.x, tryZ.z - this.z);
       if (mx > moved && mx >= mz) {
         nx = tryX.x; nz = tryZ.z;
@@ -1068,6 +1097,11 @@ export class Monster {
     }
 
     this.x = nx; this.z = nz;
+
+    // Y 추종 (2층/계단): 오르막은 지면을 따라가고, 낙하는 중력 속도로
+    const gy = this.world.groundHeightAt(this.x, this.z, this.y);
+    if (gy >= this.y) this.y = gy;
+    else this.y = Math.max(gy, this.y - 12 * dt);
 
     if (moved > 1e-4) {
       const desiredYaw = Math.atan2(dirx, dirz);
@@ -1201,8 +1235,25 @@ export class Monster {
   }
 
   /* ================= 경로 탐색 ================= */
+  // 층간 경로: 계단 포털(B=하부, T=상부)을 경유한다
   _findPath(sx, sz, tx, tz) {
-    const g = this.grid;
+    const sy = this.y, ty = (this.target && this.target.y !== undefined) ? this.target.y : this.world.heightAt(tx, tz);
+    const L0 = sy < 2.5 ? 0 : 1, L1 = ty < 2.5 ? 0 : 1;
+    if (L0 === L1) return this._findPathOn(L0 === 0 ? this.grid : this.grid2, sx, sz, tx, tz);
+    // 다른 층: 포털 경유 (올라갈 땐 상부 포털, 내려갈 땐 하부 포털)
+    const B = { x: 16, z: 22.5 }, T = { x: 16, z: 29.8 };
+    if (L0 === 0) {
+      const p0 = this._findPathOn(this.grid, sx, sz, T.x, T.z);
+      const p1 = this._findPathOn(this.grid2, T.x, T.z, tx, tz);
+      return p0.concat(p1);
+    } else {
+      const p0 = this._findPathOn(this.grid2, sx, sz, B.x, B.z);
+      const p1 = this._findPathOn(this.grid, B.x, B.z, tx, tz);
+      return p0.concat(p1);
+    }
+  }
+  _findPathOn(g, sx, sz, tx, tz) {
+    if (!g) g = this.grid;
     let si = g.idx(sx, sz);
     let ti = g.idx(tx, tz);
     if (si < 0) si = g.nearestWalkable(g.idx(clamp(sx, -63, 63), clamp(sz, -63, 63)));
@@ -1321,9 +1372,10 @@ export class Monster {
 
 /* ================= 그리드 & 힙 ================= */
 class Grid {
-  constructor(world, cell, margin) {
+  constructor(world, cell, margin, y0 = -Infinity, y1 = Infinity) {
     this.cell = cell;
     this.margin = margin;
+    this.y0 = y0; this.y1 = y1;
     this.range = CONFIG.worldRadius + 2;
     this.n = Math.ceil((this.range * 2) / cell);
     this.ox = -this.range;
@@ -1333,7 +1385,7 @@ class Grid {
       for (let i = 0; i < this.n; i++) {
         const x = this.ox + (i + 0.5) * cell;
         const z = this.oz + (j + 0.5) * cell;
-        if (world.isBlockedPoint(x, z, margin) || world.inSafeZone(x, z)) this.blocked[j * this.n + i] = 1;
+        if (world.isBlockedPoint(x, z, margin, y0, y1) || world.inSafeZone(x, z)) this.blocked[j * this.n + i] = 1;
       }
     }
   }

@@ -36,22 +36,23 @@ export class NoiseSystem {
     this.movement = clamp(level, 0, 1);
   }
 
-  addStep(intensity, x, z, label) {
+  addStep(intensity, x, z, label, y = undefined) {
     this.impulse = Math.max(this.impulse, clamp(intensity, 0, 1));
-    this._pushEvent(intensity, x, z, label);
+    this._pushEvent(intensity, x, z, label, y);
   }
 
-  addImpulse(intensity, x, z, source) {
+  addImpulse(intensity, x, z, source, y = undefined) {
     this.impulse = Math.max(this.impulse, clamp(intensity, 0, 1));
-    this._pushEvent(intensity, x, z, source);
+    this._pushEvent(intensity, x, z, source, y);
   }
 
-  _pushEvent(intensity, x, z, source) {
+  _pushEvent(intensity, x, z, source, y = undefined) {
     if (intensity >= 0.5) this.loudCount++;
     this.events.push({
       id: this._id++,
       time: performance.now() * 0.001,
       x, z,
+      y,
       intensity: clamp(intensity, 0, 1),
       source
     });
@@ -192,10 +193,10 @@ export class NoiseSystem {
     this._micEventTimer -= dt;
     if (this.micLevel > 0.12 && this._micEventTimer <= 0) {
       this._micEventTimer = 0.16;
-      this._pushEvent(this.micLevel, this._micEventX, this._micEventZ, "mic");
+      this._pushEvent(this.micLevel, this._micEventX, this._micEventZ, "mic", this._micEventY);
     }
   }
 
   // 몬스터가 마이크 이벤트 위치로 쓸 현재 플레이어 위치를 주입
-  setMicOrigin(x, z) { this._micEventX = x; this._micEventZ = z; }
+  setMicOrigin(x, z, y = undefined) { this._micEventX = x; this._micEventZ = z; this._micEventY = y; }
 }

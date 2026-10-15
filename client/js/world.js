@@ -21,12 +21,26 @@ const C = {
 const SAFE = CONFIG.safeZone;
 const _RED = new THREE.Color(0xdd2233);   // 괴물이 가까우면 조명에 스며드는 붉은 색
 
+// 남측 감시탑 (2층 별관): 1층 창고+계단실, 2층 관측실+비상 해치
+const TOWER = {
+  x0: 14, x1: 26, z0: 21, z1: 31,     // 외곽 footprint
+  deckY: 4.2,                          // 2층 바닥
+  wallTop: 7.2,                         // 2층 벽 상단
+  stairX0: 14.3, stairX1: 17.7,        // 계단 폭 (홀 내벽 가득 — 추락 방지)
+  stairZ0: 22.0, stairZ1: 29.5,        // 계단 경사 구간
+  landZ0: 29.5, landZ1: 31.0,          // 상부 평탄 착륙
+  divX: 18,                            // 계단실 | 창고·2층홀 경계벽
+  doorZ0: 28, doorZ1: 31,              // 상부 출입문 (z 범위, 격자 통과폭 확보)
+  stepRise: 0.55,                      // 오를 수 있는 최대 단차
+};
+
 export class World {
   constructor(scene, qualityName = "medium") {
     this.scene = scene;
     this.quality = QUALITY[qualityName] || QUALITY.medium;
     this.circles = [];   // {x,z,r}
     this.boxes = [];     // {minX,maxX,minZ,maxZ}
+    this.floorSlabs = [];  // 2층 바닥/착륙 {x0,x1,z0,z1,topY} (충돌 없음, 지면 함수용)
     this.grassMaterials = [];
     this.fuses = [];
     this.hidingSpots = [];
@@ -57,6 +71,7 @@ export class World {
     this._buildDoorsAndLoot();
     this._buildMissions();
     this._buildGate();
+    this._buildTower();
     this._buildProps();
     this._buildWeather();
   }
@@ -68,6 +83,43 @@ export class World {
       0.45 * Math.sin(x * 0.110 + 2.1) * Math.cos(z * 0.090 + 0.7) +
       0.22 * Math.sin((x + z) * 0.190 + 0.5)
     );
+  }
+
+  // 타워 부지 판정 (수목/바위 배치 제외용)
+  _inTowerSite(x, z, pad = 1.5) {
+    return x > TOWER.x0 - pad && x < TOWER.x1 + pad && z > TOWER.z0 - pad && z < TOWER.z1 + pad;
+  }
+
+  // 계단 경사면 높이 (계단 XZ 범위 안에서만 유효, 그 밖은 -Infinity)
+  _stairHeightAt(x, z) {
+    const T = TOWER;
+    if (x < T.stairX0 || x > T.stairX1 || z < T.stairZ0 || z > T.landZ1) return -Infinity;
+    const yBase = this.heightAt((T.stairX0 + T.stairX1) / 2, T.stairZ0);
+    if (z >= T.landZ0) return T.deckY;  // 상부 평탄 착륙
+    const t = (z - T.stairZ0) / (T.landZ0 - T.stairZ0);
+    return yBase + (T.deckY - yBase) * t;
+  }
+
+  /* ---------- 실효 지면 높이 (지형 + 2층 슬래브 + 계단) ----------
+   * topY가 현재 y + 오름 허용치 안에 있는 면만 밟는다.
+   * 아래에서 점프로 뚫고 올라가는 일 없음. 내려갈 때는 낙하. */
+  groundHeightAt(x, z, y) {
+    let g = this.heightAt(x, z);
+    const maxUp = (y === null || y === undefined) ? Infinity : y + TOWER.stepRise;
+    for (let i = 0; i < this.floorSlabs.length; i++) {
+      const s = this.floorSlabs[i];
+      if (x >= s.x0 && x <= s.x1 && z >= s.z0 && z <= s.z1 && s.topY <= maxUp && s.topY > g) {
+        g = s.topY;
+      }
+    }
+    const st = this._stairHeightAt(x, z);
+    if (st > g && st <= maxUp) g = st;
+    return g;
+  }
+
+  // 층 판정: 0 = 1층, 1 = 2층 (경계 2.5m)
+  static levelOf(y) {
+    return y >= 2.5 ? 1 : 0;
   }
 
   /* ---------- 안전지대 / 구역 판정 ---------- */
@@ -371,7 +423,7 @@ export class World {
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
       if (Math.hypot(x, z) < 8) continue;
-      if (this.inCompound(x, z) || this.inSafeZone(x, z)) continue;
+      if (this.inCompound(x, z) || this.inSafeZone(x, z) || this._inTowerSite(x, z)) continue;
       const y = this.heightAt(x, z);
       const scale = 0.8 + rng() * 0.8;
       const trunkH = 3.2 * scale;
@@ -390,7 +442,7 @@ export class World {
         dm.updateMatrix();
         (k === 0 ? coneA : k === 1 ? coneB : coneC).setMatrixAt(i, dm.matrix);
       }
-      this.circles.push({ x, z, r: 0.5 * scale });
+      this.circles.push({ x, z, r: 0.5 * scale, y0: y - 1, y1: y + 9 });
       ci++;
     }
 
@@ -399,12 +451,12 @@ export class World {
       const r = 8 + rng() * 50;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
-      if (this.inCompound(x, z) || this.inSafeZone(x, z)) continue;
+      if (this.inCompound(x, z) || this.inSafeZone(x, z) || this._inTowerSite(x, z)) continue;
       const y = this.heightAt(x, z);
       const s = 0.5 + rng() * 1.6;
       dm.position.set(x, y + s * 0.35, z); dm.scale.setScalar(s); dm.rotation.set(rng() * 3, rng() * 3, rng() * 3);
       dm.updateMatrix(); rocks.setMatrixAt(ri, dm.matrix);
-      if (s > 0.8) this.circles.push({ x, z, r: s * 0.75 });
+      if (s > 0.8) this.circles.push({ x, z, r: s * 0.75, y0: y - 1, y1: y + s });
       ri++;
     }
     const park = (im, n) => { for (let i = n; i < im.count; i++) { dm.position.set(0, -50, 0); dm.scale.setScalar(0.001); dm.rotation.set(0, 0, 0); dm.updateMatrix(); im.setMatrixAt(i, dm.matrix); } im.instanceMatrix.needsUpdate = true; };
@@ -497,7 +549,7 @@ export class World {
     station.rotation.y = -Math.PI / 2;
     station.traverse((o) => { o.castShadow = false; });
     this.scene.add(station);
-    this.circles.push({ x: sx, z: sz, r: 0.35 });
+    this.circles.push({ x: sx, z: sz, r: 0.35, y0: this.heightAt(sx, sz) - 0.5, y1: this.heightAt(sx, sz) + 1.7 });
     this.chargeStation = {
       x: sx, z: sz, y: this.heightAt(sx, sz),
       led, light: sl, group: station,
@@ -781,7 +833,8 @@ export class World {
   }
 
   // axis 'x': z=fixed, x in [from,to] / axis 'z': x=fixed, z in [from,to]
-  _wallLine(axis, fixed, from, to, gaps, h, t, mat) {
+  // yBase: 절대 높이 기준(2층 벽용). null이면 지형 기준(기존 동작).
+  _wallLine(axis, fixed, from, to, gaps, h, t, mat, yBase = null) {
     const segs = [];
     let cur = from;
     const gs = (gaps || []).slice().sort((a, b) => a.center - b.center);
@@ -803,7 +856,8 @@ export class World {
         const gw = axis === "x" ? g.width : t;
         const gd = axis === "x" ? t : g.width;
         const m = new THREE.Mesh(new THREE.BoxGeometry(gw, mh, gd), mat);
-        m.position.set(gx, this.heightAt(gx, gz) + lintelBottom + mh / 2, gz);
+        const ly = yBase !== null ? yBase + 0.5 : this.heightAt(gx, gz);
+        m.position.set(gx, ly + lintelBottom + mh / 2, gz);
         m.castShadow = true; m.receiveShadow = true;
         m.userData.castShadow = true;
         this.scene.add(m);
@@ -815,21 +869,36 @@ export class World {
       const cz = axis === "x" ? fixed : (a + b) / 2;
       const w = axis === "x" ? (b - a) : t;
       const dd = axis === "x" ? t : (b - a);
-      this._addBox(cx, cz, w, dd, h, mat);
-      // 미니맵용 벽 선분 (중심선)
-      if (axis === "x") this.walls.push({ x0: a, z0: fixed, x1: b, z1: fixed });
-      else this.walls.push({ x0: fixed, z0: a, x1: fixed, z1: b });
+      this._addBox(cx, cz, w, dd, h, mat, yBase);
+      // 미니맵용 벽 선분 (중심선 + 층 태그)
+      const wy0 = yBase !== null ? yBase : -3, wy1 = yBase !== null ? yBase + h : 6;
+      if (axis === "x") this.walls.push({ x0: a, z0: fixed, x1: b, z1: fixed, y0: wy0, y1: wy1 });
+      else this.walls.push({ x0: fixed, z0: a, x1: fixed, z1: b, y0: wy0, y1: wy1 });
     }
   }
 
-  _addBox(cx, cz, w, d, h, mat) {
-    const y = this.heightAt(cx, cz);
+  _addBox(cx, cz, w, d, h, mat, yBase = null) {
+    const y = yBase !== null ? yBase + 0.5 : this.heightAt(cx, cz);
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     m.position.set(cx, y + h / 2 - 0.5, cz);
     m.castShadow = true; m.receiveShadow = true;
     m.userData.castShadow = true;
     this.scene.add(m);
-    this.boxes.push({ minX: cx - w / 2, maxX: cx + w / 2, minZ: cz - d / 2, maxZ: cz + d / 2 });
+    // Y-태그: 1층 벽이 2층 이동을 막지 않도록 수직 범위를 기록
+    this.boxes.push({ minX: cx - w / 2, maxX: cx + w / 2, minZ: cz - d / 2, maxZ: cz + d / 2,
+      y0: y - 1.5, y1: y - 0.5 + h });
+    return m;
+  }
+
+  // 절대 높이 기준 박스 (2층 벽·기둥용) — mesh 중심 = yBase + h/2
+  _addBoxY(cx, cz, w, d, h, mat, yBase) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(cx, yBase + h / 2, cz);
+    m.castShadow = true; m.receiveShadow = true;
+    m.userData.castShadow = true;
+    this.scene.add(m);
+    this.boxes.push({ minX: cx - w / 2, maxX: cx + w / 2, minZ: cz - d / 2, maxZ: cz + d / 2,
+      y0: yBase, y1: yBase + h });
     return m;
   }
 
@@ -850,10 +919,10 @@ export class World {
     this.scene.add(m);
   }
 
-  _lamp(x, z, color, intensity, dist) {
+  _lamp(x, z, color, intensity, dist, yBase = null) {
     // 최적화: 정적 등은 실광원(PointLight) 대신 발광(emissive) 구로만 렌더링한다.
     // 중첩되는 실광원이 많으면 셰이더 비용이 급증해 렉이 심해진다.
-    const y = this.heightAt(x, z) + 2.5;
+    const y = (yBase !== null ? yBase : this.heightAt(x, z)) + 2.5;
     const lc = new THREE.Color(color);
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8),
       new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: lc.clone(), emissiveIntensity: 2.4 }));
@@ -981,14 +1050,14 @@ export class World {
   /* ---------- 프롭 빌더 ---------- */
   _yawTo(dx, dz) { return Math.atan2(-dx, -dz); }
 
-  _crate(x, z, s, mat) {
-    const y = this.heightAt(x, z);
+  _crate(x, z, s, mat, yBase = null) {
+    const y = yBase !== null ? yBase : this.heightAt(x, z);
     const m = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), mat);
     m.position.set(x, y + s / 2, z);
     m.rotation.y = rand(0, 0.4);
     m.castShadow = true; m.receiveShadow = true; m.userData.castShadow = true;
     this.scene.add(m);
-    this.boxes.push({ minX: x - s / 2, maxX: x + s / 2, minZ: z - s / 2, maxZ: z + s / 2 });
+    this.boxes.push({ minX: x - s / 2, maxX: x + s / 2, minZ: z - s / 2, maxZ: z + s / 2, y0: y - 0.5, y1: y + s });
   }
 
   _barrel(x, z) {
@@ -997,7 +1066,7 @@ export class World {
     m.position.set(x, y + 0.48, z);
     m.castShadow = true; m.userData.castShadow = true;
     this.scene.add(m);
-    this.circles.push({ x, z, r: 0.36 });
+    this.circles.push({ x, z, r: 0.36, y0: y - 0.5, y1: y + 0.95 });
   }
 
   _generator(x, z) {
@@ -1011,11 +1080,11 @@ export class World {
     g.add(pipe);
     g.position.set(x, y + 0.75, z);
     this.scene.add(g);
-    this.boxes.push({ minX: x - 1.1, maxX: x + 1.1, minZ: z - 0.6, maxZ: z + 0.6 });
+    this.boxes.push({ minX: x - 1.1, maxX: x + 1.1, minZ: z - 0.6, maxZ: z + 0.6, y0: y - 0.5, y1: y + 2.9 });
   }
 
-  _shelf(x, z, yaw, len, mat) {
-    const y = this.heightAt(x, z);
+  _shelf(x, z, yaw, len, mat, yBase = null) {
+    const y = yBase !== null ? yBase : this.heightAt(x, z);
     const g = new THREE.Group();
     for (let i = 0; i < 3; i++) {
       const b = new THREE.Mesh(new THREE.BoxGeometry(len, 0.08, 0.5), mat);
@@ -1031,11 +1100,11 @@ export class World {
     this.scene.add(g);
     const half = Math.abs(Math.cos(yaw)) > 0.5 ? len / 2 : 0.3;
     const halfZ = Math.abs(Math.cos(yaw)) > 0.5 ? 0.3 : len / 2;
-    this.boxes.push({ minX: x - half, maxX: x + half, minZ: z - halfZ, maxZ: z + halfZ });
+    this.boxes.push({ minX: x - half, maxX: x + half, minZ: z - halfZ, maxZ: z + halfZ, y0: y - 0.5, y1: y + 1.8 });
   }
 
-  _desk(x, z, yaw, woodMat, metalMat) {
-    const y = this.heightAt(x, z);
+  _desk(x, z, yaw, woodMat, metalMat, yBase = null) {
+    const y = yBase !== null ? yBase : this.heightAt(x, z);
     const g = new THREE.Group();
     const top = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.08, 0.85), woodMat);
     top.position.y = 0.78; top.castShadow = true; top.userData.castShadow = true;
@@ -1047,23 +1116,23 @@ export class World {
     }
     g.position.set(x, y, z); g.rotation.y = yaw;
     this.scene.add(g);
-    this.boxes.push({ minX: x - 0.85, maxX: x + 0.85, minZ: z - 0.43, maxZ: z + 0.43 });
+    this.boxes.push({ minX: x - 0.85, maxX: x + 0.85, minZ: z - 0.43, maxZ: z + 0.43, y0: y - 0.5, y1: y + 0.9 });
   }
 
-  _deskHide(x, z, yaw) {
-    this._desk(x, z, yaw, this.woodMat, this.metalMat);
-    this._registerHide(x, z, yaw, "desk", 0.62);
+  _deskHide(x, z, yaw, yBase = null) {
+    this._desk(x, z, yaw, this.woodMat, this.metalMat, yBase);
+    this._registerHide(x, z, yaw, "desk", 0.62, yBase);
   }
 
-  _registerHide(x, z, yaw, type, eye) {
+  _registerHide(x, z, yaw, type, eye, yBase = null) {
     this.hidingSpots.push({
       id: this.hidingSpots.length, type, x, z, yaw,
-      y: this.heightAt(x, z), eye: eye || CONFIG.hideEye, occupied: false
+      y: yBase !== null ? yBase : this.heightAt(x, z), eye: eye || CONFIG.hideEye, occupied: false
     });
   }
 
-  _locker(x, z, yaw) {
-    const y = this.heightAt(x, z);
+  _locker(x, z, yaw, yBase = null) {
+    const y = yBase !== null ? yBase : this.heightAt(x, z);
     const g = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.95, 0.55),
       new THREE.MeshStandardMaterial({ color: 0x3f4a52, roughness: 0.55, metalness: 0.5 }));
@@ -1080,13 +1149,13 @@ export class World {
     }
     g.position.set(x, y, z); g.rotation.y = yaw;
     this.scene.add(g);
-    this.boxes.push({ minX: x - 0.33, maxX: x + 0.33, minZ: z - 0.3, maxZ: z + 0.3 });
+    this.boxes.push({ minX: x - 0.33, maxX: x + 0.33, minZ: z - 0.3, maxZ: z + 0.3, y0: y - 0.5, y1: y + 2.0 });
     // 은신 위치 = 사물함 중심, 바라보는 방향 = yaw (문 쪽)
-    this._registerHide(x, z, yaw, "locker", 1.45);
+    this._registerHide(x, z, yaw, "locker", 1.45, yBase);
   }
 
-  _cabinet(x, z, yaw) {
-    const y = this.heightAt(x, z);
+  _cabinet(x, z, yaw, yBase = null) {
+    const y = yBase !== null ? yBase : this.heightAt(x, z);
     const g = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.7, 0.5),
       new THREE.MeshStandardMaterial({ color: 0x4a4238, roughness: 0.7 }));
@@ -1097,12 +1166,12 @@ export class World {
     door.position.set(0, 0.85, 0.25); g.add(door);
     g.position.set(x, y, z); g.rotation.y = yaw;
     this.scene.add(g);
-    this.boxes.push({ minX: x - 0.53, maxX: x + 0.53, minZ: z - 0.28, maxZ: z + 0.28 });
-    this._registerHide(x, z, yaw, "cabinet", 1.3);
+    this.boxes.push({ minX: x - 0.53, maxX: x + 0.53, minZ: z - 0.28, maxZ: z + 0.28, y0: y - 0.5, y1: y + 1.7 });
+    this._registerHide(x, z, yaw, "cabinet", 1.3, yBase);
   }
 
-  _chair(x, z, yaw, mat) {
-    const y = this.heightAt(x, z);
+  _chair(x, z, yaw, mat, yBase = null) {
+    const y = yBase !== null ? yBase : this.heightAt(x, z);
     const g = new THREE.Group();
     const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.5), mat);
     seat.position.y = 0.5; seat.castShadow = true; seat.userData.castShadow = true;
@@ -1128,7 +1197,7 @@ export class World {
     mat2.position.y = 0.48; g.add(mat2);
     g.position.set(x, y, z);
     this.scene.add(g);
-    this.boxes.push({ minX: x - 0.55, maxX: x + 0.55, minZ: z - 1.05, maxZ: z + 1.05 });
+    this.boxes.push({ minX: x - 0.55, maxX: x + 0.55, minZ: z - 1.05, maxZ: z + 1.05, y0: y - 0.5, y1: y + 0.6 });
   }
 
   _sign(x, z, yaw, color) {
@@ -1141,7 +1210,7 @@ export class World {
     face.position.y = 2.4; g.add(face);
     g.position.set(x, y, z); g.rotation.y = yaw;
     this.scene.add(g);
-    this.circles.push({ x, z, r: 0.2 });
+    this.circles.push({ x, z, r: 0.2, y0: y - 0.5, y1: y + 2.9 });
   }
 
   _waterTower(x, z) {
@@ -1155,7 +1224,7 @@ export class World {
     for (const [ox, oz] of [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]]) {
       const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 5.0, 6), this.metalMat);
       leg.position.set(ox, 2.5, oz); g.add(leg);
-      this.circles.push({ x: x + ox, z: z + oz, r: 0.25 });
+      this.circles.push({ x: x + ox, z: z + oz, r: 0.25, y0: y - 0.5, y1: y + 5 });
     }
     g.position.set(x, y, z);
     this.scene.add(g);
@@ -1172,7 +1241,7 @@ export class World {
     tip.position.set(x, y + 9.1, z);
     this.scene.add(tip);
     this.lamps.push({ light: null, mat: tip.material, base: 1.6, phase: 0, speed: 1.4, flicker: 1.4, color: new THREE.Color(0xff2222), x, z });
-    this.circles.push({ x, z, r: 0.3 });
+    this.circles.push({ x, z, r: 0.3, y0: y - 0.5, y1: y + 9.2 });
   }
 
   /* ---------- 퓨즈 ---------- */
@@ -1315,8 +1384,8 @@ export class World {
     this._lockedDoor(30, -4, "z", 4.0, "key_store", "잠긴 저장고 문");  // E복도 ↔ 사무실
   }
 
-  _drawer(x, z, yaw, lootId, lootName) {
-    const y = this.heightAt(x, z);
+  _drawer(x, z, yaw, lootId, lootName, yBase = null) {
+    const y = yBase !== null ? yBase : this.heightAt(x, z);
     const g = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.95, 0.5),
       new THREE.MeshStandardMaterial({ color: 0x50463a, roughness: 0.85 }));
@@ -1340,7 +1409,7 @@ export class World {
     g.position.set(x, y, z); g.rotation.y = yaw;
     this.scene.add(g);
 
-    const box = { minX: x - 0.48, maxX: x + 0.48, minZ: z - 0.3, maxZ: z + 0.3 };
+    const box = { minX: x - 0.48, maxX: x + 0.48, minZ: z - 0.3, maxZ: z + 0.3, y0: y - 0.5, y1: y + 1.1 };
     this.boxes.push(box);
     const rec = {
       id: "drawer_" + this.drawers.length,
@@ -1448,7 +1517,7 @@ export class World {
 
     const w = axis === "x" ? width : 0.24;
     const dd = axis === "x" ? 0.24 : width;
-    const box = { minX: x - w / 2, maxX: x + w / 2, minZ: z - dd / 2, maxZ: z + dd / 2 };
+    const box = { minX: x - w / 2, maxX: x + w / 2, minZ: z - dd / 2, maxZ: z + dd / 2, y0: y - 0.5, y1: y + h + 0.1 };
     this.boxes.push(box);
 
     const rec = { x, z, axis, width, mesh, box, indicator: ind, keyId, label, open: false,
@@ -1583,12 +1652,137 @@ export class World {
     this.scene.add(gate);
 
     this.gate = { x: gx, z: gz, group: gate, door, open: false };
-    this.boxes.push({ minX: gx - 2.45, maxX: gx - 1.95, minZ: gz - 0.25, maxZ: gz + 0.25 });
-    this.boxes.push({ minX: gx + 1.95, maxX: gx + 2.45, minZ: gz - 0.25, maxZ: gz + 0.25 });
-    this._gateDoorBox = { minX: gx - 2.0, maxX: gx + 2.0, minZ: gz - 0.12, maxZ: gz + 0.12 };
+    const gy0 = gy - 0.5, gy1 = gy + 4.2;
+    this.boxes.push({ minX: gx - 2.45, maxX: gx - 1.95, minZ: gz - 0.25, maxZ: gz + 0.25, y0: gy0, y1: gy1 });
+    this.boxes.push({ minX: gx + 1.95, maxX: gx + 2.45, minZ: gz - 0.25, maxZ: gz + 0.25, y0: gy0, y1: gy1 });
+    this._gateDoorBox = { minX: gx - 2.0, maxX: gx + 2.0, minZ: gz - 0.12, maxZ: gz + 0.12, y0: gy0, y1: gy1 };
     this.boxes.push(this._gateDoorBox);
 
     this.exit = { x: gx, z: gz + 3 };
+  }
+
+  /* ---------- 남측 감시탑 (2층 별관) ----------
+   * 1층: 창고 + 계단실 / 2층: 관측실 + 숨겨진 비상 해치(최종 탈출구)
+   * 벽은 절대 높이 기준(yBase)으로 쌓는다. TBY = 부지 지형 - 0.5 */
+  _buildTower() {
+    const T = TOWER;
+    const H = C.wallH, TT = C.wallT, M = this.wallMat;
+    const door = (c, w) => ({ center: c, width: w });
+    const TBY = this.heightAt(20, 26) - 0.5;
+    const DT = T.deckY, WT = T.wallTop;
+
+    // ---- 외벽 (풀 높이) ----
+    this._wallLine("z", T.x0, T.z0, T.z1, [], H, TT, M, TBY);                    // 서 (x=14)
+    this._wallLine("z", T.x1, T.z0, T.z1, [], H, TT, M, TBY);                    // 동 (x=26)
+    this._wallLine("x", T.z1, T.x0, T.x1, [], H, TT, M, TBY);                    // 남 (z=31)
+    // 북 (z=21): 하부는 출입문 2개, 상부는 막힘
+    this._wallLine("x", T.z0, T.x0, T.x1, [door(16, 2.4), door(22, 2.4)], DT - TBY, TT, M, TBY);
+    this._wallLine("x", T.z0, T.x0, T.x1, [], WT - DT, TT, M, DT);
+    // 경계벽 (x=18): 하부는 막힘, 상부는 2층 출입문
+    this._wallLine("z", T.divX, T.z0, T.z1, [], DT - TBY, TT, M, TBY);
+    this._wallLine("z", T.divX, T.z0, T.z1, [door(29.5, 3)], WT - DT, TT, M, DT);
+
+    // ---- 2층 바닥 데크 (시각 + 지면 등록) ----
+    const deckMat = new THREE.MeshStandardMaterial({ color: 0x3a4148, roughness: 0.8, metalness: 0.3 });
+    const deckHall = new THREE.Mesh(new THREE.BoxGeometry(T.x1 - T.divX, 0.3, T.z1 - T.z0), deckMat);
+    deckHall.position.set((T.divX + T.x1) / 2, DT - 0.15, (T.z0 + T.z1) / 2);
+    deckHall.castShadow = true; deckHall.receiveShadow = true;
+    this.scene.add(deckHall);
+    this.floorSlabs.push({ x0: T.divX, x1: T.x1, z0: T.z0, z1: T.z1, topY: DT });
+    const deckLand = new THREE.Mesh(new THREE.BoxGeometry(T.divX - T.x0, 0.3, T.landZ1 - T.landZ0), deckMat);
+    deckLand.position.set((T.x0 + T.divX) / 2, DT - 0.15, (T.landZ0 + T.landZ1) / 2);
+    deckLand.castShadow = true; deckLand.receiveShadow = true;
+    this.scene.add(deckLand);
+    this.floorSlabs.push({ x0: T.x0, x1: T.divX, z0: T.landZ0, z1: T.landZ1, topY: DT });
+
+    // ---- 계단 디딤돌 (시각 전용 — 보행은 지면 함수가 담당) ----
+    const SB = this.heightAt((T.stairX0 + T.stairX1) / 2, T.stairZ0);
+    const NSTEPS = 15, runLen = (T.landZ0 - T.stairZ0) / NSTEPS;
+    const stepMat = new THREE.MeshStandardMaterial({ color: 0x464e56, roughness: 0.85, metalness: 0.2 });
+    for (let i = 0; i < NSTEPS; i++) {
+      const topY = SB + (DT - SB) * ((i + 1) / NSTEPS);
+      const st = new THREE.Mesh(new THREE.BoxGeometry(T.stairX1 - T.stairX0, 0.25, runLen + 0.06), stepMat);
+      st.position.set((T.stairX0 + T.stairX1) / 2, topY - 0.125, T.stairZ0 + (i + 0.5) * runLen);
+      st.castShadow = true; st.receiveShadow = true;
+      this.scene.add(st);
+    }
+
+    // ---- 2층 지붕 (관측실 위만 — 계단실은 밤하늘 개방) ----
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(T.x1 - T.divX + 0.8, 0.4, T.z1 - T.z0 + 0.8), M);
+    roof.position.set((T.divX + T.x1) / 2, WT - 0.2, (T.z0 + T.z1) / 2);
+    roof.castShadow = true; roof.userData.castShadow = true;
+    this.scene.add(roof);
+
+    // ---- 1층 창고 가구 ----
+    this._shelf(24.5, 25, Math.PI / 2, 4, this.metalMat);
+    this._shelf(24.5, 28.5, Math.PI / 2, 3, this.metalMat);
+    this._crate(20, 29, 1.0, this.woodMat);
+    this._crate(21.2, 29.2, 0.8, this.woodMat);
+    this._lamp(22, 26, 0xffd9a0, 12, 16);
+    this._drawer(19.5, 25, 0, "medkit", "구급상자");
+    this._drawer(24.5, 22.5, -Math.PI / 2, "battery", "예비 배터리");
+
+    // ---- 계단실 조명 ----
+    this._lamp(16, 26, 0xffa040, 11, 15);
+
+    // ---- 2층 관측실 가구 (바닥 DT 기준 — 문→중앙 통로 x18~22 비움) ----
+    this._deskHide(24.5, 27, Math.PI, DT);
+    this._locker(19.2, 22.2, 0, DT);              // 2층 은신처
+    this._shelf(25.5, 24, Math.PI, 4, this.metalMat, DT);
+    this._drawer(23.5, 25, Math.PI, "battery", "예비 배터리", DT);
+    this._drawer(21.8, 28.5, 0, "smoke", "연막탄", DT);
+    this._lamp(22, 26, 0x9fd0ff, 12, 17, DT);
+
+    // ---- 비상 해치 (동벽 앞 위장 캐비닛 + 상태 램프 + 안내판 + 케이블) ----
+    const hx = 25.2, hz = 22.5;
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(1.0, 2.0, 0.8),
+      new THREE.MeshStandardMaterial({ color: 0x39424a, roughness: 0.5, metalness: 0.6 }));
+    cab.position.set(hx, DT + 1.0, hz);
+    cab.castShadow = true; cab.receiveShadow = true;
+    this.scene.add(cab);
+    this.boxes.push({ minX: hx - 0.5, maxX: hx + 0.5, minZ: hz - 0.4, maxZ: hz + 0.4, y0: DT, y1: DT + 2.0 });
+    // 상태 램프 (빨강=잠김 / 초록=개방)
+    this.hatchLampMat = new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0xaa1111, emissiveIntensity: 2.0 });
+    const hlamp = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), this.hatchLampMat);
+    hlamp.position.set(hx - 0.3, DT + 2.25, hz);
+    this.scene.add(hlamp);
+    // 케이블 덕트 (바닥→해치 수직 + 벽 하단 수평 — 환경 단서)
+    const cableMat = new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.7, metalness: 0.4 });
+    const cableV = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.2, 0.12), cableMat);
+    cableV.position.set(hx + 0.55, DT + 1.1, hz);
+    this.scene.add(cableV);
+    const cableH = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 6.5), cableMat);
+    cableH.position.set(hx + 0.55, DT + 0.15, hz + 3.4);
+    this.scene.add(cableH);
+    // 안내판
+    const pc = document.createElement("canvas");
+    pc.width = 256; pc.height = 64;
+    const pg = pc.getContext("2d");
+    pg.fillStyle = "#10151b"; pg.fillRect(0, 0, 256, 64);
+    pg.strokeStyle = "#ffb347"; pg.lineWidth = 4; pg.strokeRect(3, 3, 250, 58);
+    pg.fillStyle = "#ffb347"; pg.font = "bold 26px sans-serif"; pg.textAlign = "center"; pg.textBaseline = "middle";
+    pg.fillText("비상 탈출 해치", 128, 32);
+    const ptex = new THREE.CanvasTexture(pc);
+    ptex.colorSpace = THREE.SRGBColorSpace;
+    const plaque = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.4),
+      new THREE.MeshBasicMaterial({ map: ptex, transparent: true, fog: false }));
+    plaque.position.set(hx - 0.62, DT + 1.5, hz);
+    plaque.rotation.y = -Math.PI / 2;
+    this.scene.add(plaque);
+    // 탈출 빔 기둥 (전원 후 초록빛)
+    this.hatchBeamMat = new THREE.MeshBasicMaterial({
+      color: 0xff4444, transparent: true, opacity: 0.08,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false
+    });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.0, 9, 12, 1, true), this.hatchBeamMat);
+    beam.position.set(hx - 0.6, DT + 4.5, hz);
+    beam.renderOrder = 4;
+    this.scene.add(beam);
+    this.hatch = { x: hx - 0.9, z: hz };
+
+    // ---- 미니맵 등록 (2층 홀) ----
+    this.rooms.push({ x: (T.divX + T.x1) / 2, z: (T.z0 + T.z1) / 2, w: T.x1 - T.divX, d: T.z1 - T.z0, name: "2층 관측실", y: DT });
+    this.rooms.push({ x: (T.x0 + T.divX) / 2, z: (T.z0 + T.z1) / 2, w: T.divX - T.x0, d: T.z1 - T.z0, name: "계단실", y: 0 });
   }
 
   /* ---------- 야외 소품 (외벽에 붙여 배치 — 시야를 새로 가리지 않음) ---------- */
@@ -1611,7 +1805,7 @@ export class World {
       g.rotation.y = ry;
       g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
       this.scene.add(g);
-      this.circles.push({ x, z, r: s * 0.72 });
+      this.circles.push({ x, z, r: s * 0.72, y0: y - 0.5, y1: y + s });
     };
     const barrel = (x, z) => {
       const y = this.heightAt(x, z);
@@ -1626,7 +1820,7 @@ export class World {
       g.rotation.y = Math.random() * Math.PI;
       g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
       this.scene.add(g);
-      this.circles.push({ x, z, r: 0.55 });
+      this.circles.push({ x, z, r: 0.55, y0: y - 0.5, y1: y + 1.1 });
     };
 
     // 남쪽 외벽 바깥 (z=18) — 통로 중앙(x=0)은 비운다
@@ -1660,7 +1854,7 @@ export class World {
       g.position.set(ax, ay, az);
       g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
       this.scene.add(g);
-      this.circles.push({ x: ax, z: az, r: 0.9 });
+      this.circles.push({ x: ax, z: az, r: 0.9, y0: ay - 0.5, y1: ay + 17.4 });
     }
 
     // 반딧불 (숲 가장자리 drift)
@@ -1739,15 +1933,27 @@ export class World {
   }
 
   /* ---------- 충돌 ---------- */
-  collide(x, z, radius) {
+  // Y-인식: y=null이면 기존 동작(모든 박스와 충돌). y를 주면 수직 범위가
+  // [y, y+h]와 겹치는 박스하고만 충돌한다 (1층 벽이 2층 이동을 막지 않게).
+  static yOverlap(a0, a1, b0, b1) {
+    if (a0 === undefined || a0 === null) a0 = -Infinity;
+    if (a1 === undefined || a1 === null) a1 = Infinity;
+    if (b0 === undefined || b0 === null) b0 = -Infinity;
+    if (b1 === undefined || b1 === null) b1 = Infinity;
+    return a0 < b1 && b0 < a1;
+  }
+  collide(x, z, radius, y = null, h = 1.7) {
     const B = CONFIG.worldRadius;
     const d = Math.hypot(x, z);
     if (d > B - radius) {
       const s = (B - radius) / (d || 1);
       x *= s; z *= s;
     }
+    const checkY = (y !== null && y !== undefined);
+    const y0 = y, y1 = checkY ? y + h : y;
     for (let i = 0; i < this.circles.length; i++) {
       const c = this.circles[i];
+      if (checkY && !World.yOverlap(y0, y1, c.y0, c.y1)) continue;
       const dx = x - c.x, dz = z - c.z;
       const rr = c.r + radius;
       const dd = dx * dx + dz * dz;
@@ -1759,6 +1965,7 @@ export class World {
     }
     for (let i = 0; i < this.boxes.length; i++) {
       const b = this.boxes[i];
+      if (checkY && !World.yOverlap(y0, y1, b.y0, b.y1)) continue;
       const nx = clamp(x, b.minX, b.maxX);
       const nz = clamp(z, b.minZ, b.maxZ);
       const dx = x - nx, dz = z - nz;
@@ -1781,14 +1988,16 @@ export class World {
     return { x, z };
   }
 
-  isBlockedPoint(x, z, r) {
+  isBlockedPoint(x, z, r, y0 = -Infinity, y1 = Infinity) {
     if (Math.hypot(x, z) > CONFIG.worldRadius - r) return true;
     for (let i = 0; i < this.circles.length; i++) {
       const c = this.circles[i];
+      if (!World.yOverlap(y0, y1, c.y0, c.y1)) continue;
       if (dist2(x, z, c.x, c.z) < (c.r + r) * (c.r + r)) return true;
     }
     for (let i = 0; i < this.boxes.length; i++) {
       const b = this.boxes[i];
+      if (!World.yOverlap(y0, y1, b.y0, b.y1)) continue;
       const nx = clamp(x, b.minX, b.maxX);
       const nz = clamp(z, b.minZ, b.maxZ);
       if (dist2(x, z, nx, nz) < r * r) return true;
@@ -1796,13 +2005,18 @@ export class World {
     return false;
   }
 
-  lineBlocked(ax, az, bx, bz) {
+  // 3D 시야 차단: ya/yb는 양 끝 눈높이. 기본 1.0(지상 눈높이) — 기존 호출과 호환.
+  lineBlocked(ax, az, bx, bz, ya = 1.0, yb = 1.0) {
+    const segY0 = Math.min(ya, yb), segY1 = Math.max(ya, yb);
     for (let i = 0; i < this.circles.length; i++) {
       const c = this.circles[i];
+      if (!World.yOverlap(segY0, segY1, c.y0, c.y1)) continue;
       if (segCircle(ax, az, bx, bz, c.x, c.z, Math.max(0.1, c.r * 0.85))) return true;
     }
     for (let i = 0; i < this.boxes.length; i++) {
-      if (segAABB(ax, az, bx, bz, this.boxes[i])) return true;
+      const b = this.boxes[i];
+      if (!World.yOverlap(segY0, segY1, b.y0, b.y1)) continue;
+      if (segAABB(ax, az, bx, bz, b)) return true;
     }
     return false;
   }
