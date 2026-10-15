@@ -47,9 +47,12 @@ const server = http.createServer((req, res) => {
     }
     const ext = path.extname(filePath).toLowerCase();
     const type = MIME[ext] || "application/octet-stream";
+    // html/js/mjs/css는 항상 재검증 — 새 배포가 브라우저 캐시(구버전 모듈)에 갇히지 않게.
+    // (ES모듈 import는 ?v= 진입점과 무관하게 URL 그대로 캐시되므로 max-age 금지)
+    const noCache = ext === ".html" || ext === ".js" || ext === ".mjs" || ext === ".css";
     const headers = {
       "Content-Type": type,
-      "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=3600"
+      "Cache-Control": noCache ? "no-cache" : "public, max-age=3600"
     };
     send(res, 200, headers, data);
   });
