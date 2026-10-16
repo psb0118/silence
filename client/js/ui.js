@@ -226,7 +226,8 @@ export class UI {
     const mz = (z) => PAD + (z - Z0) * sy;
     const level = (p.y || 0) >= 2.5 ? 1 : 0;
 
-    // 배경
+    // 배경 (반투명이라 매 프레임 지우고 다시 그린다 — 덧칠 누적 금지)
+    c.clearRect(0, 0, W, H);
     c.fillStyle = "rgba(5,10,16,0.86)";
     c.fillRect(0, 0, W, H);
     c.strokeStyle = "#2a3f55"; c.lineWidth = 1;
