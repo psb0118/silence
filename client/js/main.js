@@ -9,6 +9,7 @@ import { Monster, STATE } from "./monster.js";
 import { UI } from "./ui.js";
 import { getItemDef } from "./inventory.js";
 import { net } from "./net.js";
+import { setupTouch, touchState, isTouchDevice } from "./touch.js";
 
 /* ================= 설정 ================= */
 const settings = Object.assign(
@@ -761,6 +762,7 @@ function unlockPointer() {
 }
 document.addEventListener("pointerlockchange", () => {
   pointerLocked = document.pointerLockElement === renderer.domElement;
+  if (window.__touchMode) return;  // 터치 기기는 포인터 잠금을 쓰지 않는다
   if (!pointerLocked && game.phase === "playing") {
     // 메모/키패드/설정메뉴를 여는 중 해제 → pause() 재호출 금지
     if (ui.isNoteOpen() || game.keypad || game.menuOpen) return;
@@ -2023,9 +2025,14 @@ function step(dt) {
     ui.setBattery(player.battery / CONFIG.battery.max);
     ui.setHp(player.hp, player.maxHp);
     ui.setSafeZone(player.inSafeZone, player.charging);
+    ui.setHidden(player.hidden);
     ui.setMic(noise.micState);
+    // 터치 컨트롤 표시 (플레이 중만)
+    if (touchState.active && touchUI) touchUI.classList.toggle("hidden", game.phase !== "playing");
     // 스피드런 타이머 — game.elapsed은 playing일 때만 흐른다(ESC 일시정지 = 타이머 정지)
     if (runTimerEl) runTimerEl.textContent = formatTime(game.elapsed);
+  } else if (touchState.active && touchUI) {
+    touchUI.classList.add("hidden");
   }
 
   if (!document.hidden) renderer.render(scene, camera);
@@ -2141,6 +2148,23 @@ if (setFov) {
 ui.setMic("off");
 ui.setFlashlight(true);
 ui.setHudVisible(false);
+
+/* ================= 모바일 터치 (input 선언 이후에 배선 — TDZ 주의) ================= */
+setupTouch({
+  input, settings,
+  getPlayer: () => player,
+  isPlaying: () => game.phase === "playing" && !game.menuOpen,
+  onE: (down) => {
+    if (down) { if (game.phase === "playing" && !game.menuOpen) eKeyDown = true; }
+    else { eKeyDown = false; game.eConsumed = false; }
+  },
+  onF: () => { if (game.phase === "playing" && !game.menuOpen && !game.keypad) situationF(); },
+  onMap: () => { if (game.phase === "playing") toggleMinimap(); },
+  onJump: () => { if (game.phase === "playing" && !game.menuOpen) input.jump = true; },
+  onCrouchToggle: () => { if (game.phase === "playing") input.crouch = !input.crouch; },
+  onSlot: (i) => { if (game.phase === "playing" && !game.menuOpen && !game.keypad) handleDigit(i); },
+});
+const touchUI = document.getElementById("touch-ui");
 
 // 디버그/테스트용 훅
   window.__silence = { game, player, monster, get monster2() { return monster2; }, get monster2Active() { return monster2Active; }, startGame, winGame, tryHatch, noise, world, ui, settings, STATE, input, audio, renderer, camera, scene, THREE, DIFFICULTY, CONFIG, applyDifficulty, smokes, decoys, primaryAction, situationF, handleDigit, stowHeld, equipSlot, useSlot, keypadPress, openKeypad, closeKeypad, updateTraps, updateExitPower, missionsAllDone, missionDoneCount, net, respawnLocal, applySnapshot, buildSnapshot, buildPose, handleNetEvent, handleRemoteAct, trapGone };

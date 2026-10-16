@@ -12,6 +12,8 @@ export class UI {
     this.hpText = $("#hp-text");
     this.safeZoneChip = $("#safezone-status");
     this.safeZoneText = $("#safezone-text");
+    this.hideChip = $("#hide-status");
+    this.hideText = $("#hide-text");
     this.objMain = $("#obj-main");
     this.objSub = $("#obj-sub");
     this.fuseCount = $("#fuse-count");
@@ -127,6 +129,11 @@ export class UI {
     this.safeZoneChip.classList.toggle("hidden", !inSafe);
     this.safeZoneChip.classList.toggle("safe", inSafe);
     this.safeZoneText.textContent = inSafe ? (charging ? "충전 중" : "안전") : "밖";
+  }
+
+  setHidden(hidden) {
+    if (!this.hideChip) return;
+    this.hideChip.classList.toggle("hidden", !hidden);
   }
 
   setObjective(main, collected, total, nearestDist) {

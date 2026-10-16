@@ -539,3 +539,38 @@ html, body {
 }
 #mp-roster li.mp-host { border-color: rgba(127,240,176,0.42); color: #7ff0b0; }
 #mp-roster li.mp-empty { color: #7f93a3; }
+
+/* 모바일 터치 컨트롤 (touch-mode에서만 표시) */
+#touch-ui { display: none; }
+body.touch-mode #touch-ui { display: block; }
+body.touch-mode #touch-ui.hidden { display: none; }
+#touch-left {
+  position: fixed; left: 0; bottom: 0; width: 44vw; height: 52vh; z-index: 40;
+  touch-action: none;
+}
+#touch-right {
+  position: fixed; right: 0; bottom: 0; width: 56vw; height: 78vh; z-index: 40;
+  touch-action: none;
+}
+#touch-stick {
+  position: absolute; left: 26px; bottom: 90px; width: 120px; height: 120px;
+  border: 2px solid rgba(255,255,255,0.25); border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+}
+#touch-nub {
+  position: absolute; left: 50%; top: 50%; width: 52px; height: 52px;
+  margin: -26px 0 0 -26px; border-radius: 50%;
+  background: rgba(255,255,255,0.28);
+}
+#touch-btns {
+  position: fixed; right: 12px; bottom: 86px; z-index: 41;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.touch-btn {
+  width: 62px; height: 52px; border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.25);
+  background: rgba(10,16,24,0.55); color: #e7edf3; font-size: 14px;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.touch-btn.big { height: 68px; font-size: 17px; font-weight: 700; border-color: rgba(240,181,106,0.6); }
+.touch-btn:active { background: rgba(240,181,106,0.35); }

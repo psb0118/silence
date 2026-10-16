@@ -87,6 +87,7 @@
     <!-- 좌하단: 장비 상태 -->
     <div id="status-left">
       <div id="safezone-status" class="chip hidden"><span class="dot"></span>안전지대 <b id="safezone-text">밖</b></div>
+      <div id="hide-status" class="chip hidden"><span class="dot"></span>은신 중 <b id="hide-text">숨음</b></div>
       <div id="flashlight-status" class="chip"><span class="dot"></span>손전등 <b id="flash-text">ON</b> <em>[F]</em></div>
       <div id="mic-status" class="chip"><span class="dot"></span>마이크 <b id="mic-text">확인 중…</b> <em>[V]</em></div>
     </div>
@@ -313,6 +314,22 @@
         <div><span>부가 미션</span><b id="win-missions">0/13</b></div>
       </div>
       <button id="btn-again" class="big-btn">다시 플레이</button>
+    </div>
+  </div>
+
+
+  <!-- ================= 모바일 터치 컨트롤 ================= -->
+  <div id="touch-ui" class="hidden">
+    <div id="touch-left">
+      <div id="touch-stick"><div id="touch-nub"></div></div>
+    </div>
+    <div id="touch-right"></div>
+    <div id="touch-btns">
+      <button id="touch-e" class="touch-btn big">E</button>
+      <button id="touch-f" class="touch-btn">F</button>
+      <button id="touch-map" class="touch-btn">지도</button>
+      <button id="touch-jump" class="touch-btn">점프</button>
+      <button id="touch-crouch" class="touch-btn">앉기</button>
     </div>
   </div>
 
