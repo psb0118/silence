@@ -1724,6 +1724,7 @@ export class World {
 
     // ---- 계단실 조명 ----
     this._lamp(16, 26, 0xffa040, 11, 15);
+    this._lamp(16, 19.6, 0xffd9a0, 10, 14);   // 탑 입구 포치등
 
     // ---- 2층 관측실 가구 (바닥 DT 기준 — 문→중앙 통로 x18~22 비움) ----
     this._deskHide(24.5, 27, Math.PI, DT);
