@@ -110,7 +110,8 @@ const game = {
   heldSlot: -1,      // 손에 들고 있는 소모품 슬롯 번호 (-1 = 맨손)
   notesRead: {},     // 읽은 메모 id → true
   keypad: null,      // 열려 있는 비밀번호 키패드 { door, buf }
-  batonReadyAt: 0    // 충격기 재사용 가능 시각 (performance.now 기준 ms)
+  batonReadyAt: 0,   // 충격기 재사용 가능 시각 (performance.now 기준 ms)
+  menuOpen: false    // 설정 오버레이 열림 (멀티: 월드 정지 없이 입력만 차단 / 싱글: pause와 함께 사용)
 };
 const FUSE_TOTAL = world.fuses.length;
 
@@ -168,8 +169,8 @@ function updateExitPower() {
   if (fuseDone && misDone) {
     game.exitPowered = true;
     world.setExitPowered(true);
-    ui.toast("전원 복구 + 부가 미션 완수 — 격리 철문의 잠금이 풀렸다", 4000);
-    ui.setObjective("격리 철문으로 탈출하라", game.collected, FUSE_TOTAL, null);
+    ui.toast("전원 복구 + 부가 미션 완수 — 2층 감시탑 비상 해치가 열렸다", 4000);
+    ui.setObjective("2층 감시탑 비상 해치로 탈출하라", game.collected, FUSE_TOTAL, null);
   } else if (fuseDone) {
     ui.toast("차단기 전부 재기동 — 부가 미션도 모두 완수해야 격리 철문이 열린다", 3400);
   } else if (misDone) {
@@ -286,9 +287,15 @@ function handleRemoteAct(from, act) {
       break;
     }
     case "gate": {
+      // 북문 철문은 고장 — 승리 조건이 될 수 없다 (무시)
+      break;
+    }
+    case "hatch": {
+      // 2층 비상 해치: 전제조건(퓨즈+미션) 검증 후 탈출
       const p = net.remotePose(from);
       if (!p || !game.exitPowered) break;
-      if (Math.hypot(world.exit.x - p.x, world.exit.z - p.z) > CONFIG.interaction.gateRange) break;
+      if (!world.hatch) break;
+      if (Math.hypot(world.hatch.x - p.x, world.hatch.z - p.z) > CONFIG.interaction.gateRange) break;
       winGame();
       break;
     }
@@ -455,6 +462,7 @@ function syncGhost(m, data) {
   if (!data) { m.group.visible = false; return; }
   m.group.visible = true;
   m.setNetTarget(data.x, data.z, data.yaw);
+  if (data.y !== undefined && data.y !== null) m.y = data.y;
   const wasStunned = m.stunT > 0;
   m.stunT = data.stunT || 0;
   m.slowT = data.slowT || 0;
@@ -514,7 +522,7 @@ function localPull() {
 /* --- 포즈 / 스냅샷 빌드 --- */
 function buildPose() {
   return {
-    x: +player.x.toFixed(3), z: +player.z.toFixed(3),
+    x: +player.x.toFixed(3), z: +player.z.toFixed(3), y: +player.y.toFixed(2),
     yaw: player.yaw, pitch: player.pitch,
     hidden: !!player.hidden,
     hideIdx: player.hideSpot ? world.hidingSpots.indexOf(player.hideSpot) : -1,
@@ -538,7 +546,7 @@ function buildSnapshot() {
   }
   const monsters = [];
   for (const m of activeMonsters()) {
-    monsters.push({ x: +m.x.toFixed(3), z: +m.z.toFixed(3), yaw: m.yaw, st: m.state, stunT: +m.stunT.toFixed(2), slowT: +m.slowT.toFixed(2) });
+    monsters.push({ x: +m.x.toFixed(3), z: +m.z.toFixed(3), y: +m.y.toFixed(2), yaw: m.yaw, st: m.state, stunT: +m.stunT.toFixed(2), slowT: +m.slowT.toFixed(2) });
   }
   return {
     t: game.elapsed,
@@ -584,6 +592,7 @@ net.setup({
       const wasPlaying = game.phase === "playing" || game.phase === "paused" || game.phase === "scaring";
       if (wasPlaying) {
         game.phase = "menu";
+        game.menuOpen = false;
         unlockPointer();
         clearEffects();
         ui.hideJumpscare();
@@ -665,7 +674,7 @@ function onKey(e, down) {
       if (down && !e.repeat && game.phase === "playing" && game.keypad) keypadPress("0");
       break;
     case "Escape":
-      // 키패드 → 메모 → 일시정지 순으로 닫는다. 포인터 재잠금은 클릭(유저 제스처)으로만 한다.
+      // 키패드 → 메모 → 멀티패널/설정메뉴 → 일시정지 순으로 닫는다.
       // (keydown에서만 동작 — keyup 재실행 시 바로 일시정지되는 버그 방지)
       if (!down || e.repeat) break;
       if (game.keypad) {
@@ -678,7 +687,15 @@ function onKey(e, down) {
         // (패널만 닫히고 방에 남으면 싱글 버튼이 계속 멀티 패널을 되열게 되는 함정 방지)
         if (net.active && net.state === "lobby") net.leaveRoom();
         net.closePanel();
-      } else if (game.phase === "playing") pause();
+      } else if (game.menuOpen) {
+        // 설정 오버레이 열림: 멀티면 월드 정지 없이 닫기, 싱글이면 재개
+        if (game.phase === "paused") resume();
+        else closeMpMenu();
+      } else if (game.phase === "playing") {
+        // 멀티 방에서는 설정만 열고 월드는 계속 굴린다
+        if (net.active && net.state === "playing") openMpMenu();
+        else pause();
+      }
       break;
   }
 }
@@ -745,9 +762,11 @@ function unlockPointer() {
 document.addEventListener("pointerlockchange", () => {
   pointerLocked = document.pointerLockElement === renderer.domElement;
   if (!pointerLocked && game.phase === "playing") {
-    // 메모/키패드를 여는 중 해제 → 일시정지/재잠금 없음 (닫기는 클릭 또는 ESC)
-    if (ui.isNoteOpen() || game.keypad) return;
-    pause();
+    // 메모/키패드/설정메뉴를 여는 중 해제 → pause() 재호출 금지
+    if (ui.isNoteOpen() || game.keypad || game.menuOpen) return;
+    // 멀티 방에서는 설정만 열고 월드는 계속 굴린다 (브라우저 레벨 ESC 포함)
+    if (net.active && net.state === "playing") openMpMenu();
+    else pause();
   }
 });
 document.addEventListener("pointerlockerror", () => {
@@ -803,6 +822,7 @@ function startGame() {
   game.eConsumed = false;
   game.heldSlot = -1;
   game.keypad = null;
+  game.menuOpen = false;
   game.batonReadyAt = 0;
   ui.hideKeypad();
   showAlert(null);
@@ -913,23 +933,52 @@ function resetFuses() {
 function pause() {
   if (game.phase !== "playing") return;
   game.phase = "paused";
+  game.menuOpen = true;
   unlockPointer();
   ui.hideNote();
+  setPauseTitle();
   ui.show(ui.pause);
   ui.setMic(noise.micState);
 }
 
 function resume() {
+  game.menuOpen = false;
   ui.hide(ui.pause);
-  game.phase = "playing";
+  if (game.phase === "paused") game.phase = "playing";
   audio.resume();
-  lockPointer();
+  if (game.phase === "playing" && !pointerLocked) lockPointer();
+}
+
+// 멀티플레이 설정 오버레이: 월드는 계속 굴러간다 (phase 유지, 입력만 차단).
+// 싱글에서는 pause()를 쓴다.
+function openMpMenu() {
+  if (game.phase !== "playing" || game.menuOpen) return;
+  game.menuOpen = true;
+  unlockPointer();
+  setPauseTitle();
+  ui.show(ui.pause);
+}
+
+function closeMpMenu() {
+  if (!game.menuOpen) return;
+  game.menuOpen = false;
+  ui.hide(ui.pause);
+  if (game.phase === "playing" && !pointerLocked) lockPointer();
+}
+
+function setPauseTitle() {
+  const t = document.getElementById("pause-title");
+  const mp = net.active && net.state === "playing";
+  if (t) t.textContent = mp ? "설정 (게임은 계속 진행 중)" : "일시정지";
 }
 
 document.getElementById("btn-resume").addEventListener("click", resume);
 document.getElementById("btn-quit").addEventListener("click", () => {
+  game.menuOpen = false;
   ui.hide(ui.pause);
   ui.setHudVisible(false);
+  // 멀티 방에 있었다면 나간다 (유령 호스트/관전 잔류 방지)
+  if (net.active && net.state !== "idle") net.leaveRoom();
   game.phase = "menu";
   clearEffects();
   ui.show(ui.start);
@@ -945,6 +994,29 @@ function onCaught(m) {
   }
   const res = player.takeDamage(1);
   if (!res.ok) { m._caught = false; return; }
+
+  // 단일-라이프 모드 치명타 + 구급상자 보유 → 1회 방어 (소모 후 소진)
+  if (res.dead && player.maxHp <= 1) {
+    const slots = player.inventory.slots;
+    const mi = slots.findIndex(s => s.id === "medkit" && s.count > 0);
+    if (mi >= 0) {
+      player.inventory.takeAt(mi);
+      player.hp = player.maxHp;
+      ui.setInventory(player.inventory, game.heldSlot >= 0 ? game.heldSlot : -1);
+      const dx = player.x - m.x, dz = player.z - m.z;
+      const len = Math.hypot(dx, dz) || 1;
+      const kb = CONFIG.combat.knockback;
+      player.knockback((dx / len) * kb, (dz / len) * kb, CONFIG.combat.knockbackUp);
+      player.addCameraShake(0.9);
+      m.forceRecover();
+      noise.addImpulse(0.35, player.x, player.z, "hurt", player.y);
+      audio.attackScreech();
+      ui.flashDamage();
+      ui.setHp(player.hp, player.maxHp);
+      ui.toast("구급상자가 치명상을 막았다 (소모됨)", 2800);
+      return;
+    }
+  }
 
   if (!res.dead) {
     // 비치명 피격: 넉백 + 잠시 추적자와 분리
@@ -975,6 +1047,8 @@ function onCaught(m) {
 
 function finishScare() {
   game.phase = "dead";
+  game.menuOpen = false;
+  ui.hide(ui.pause);
   ui.hideJumpscare();
   clearEffects();
   document.getElementById("stat-time").textContent = formatTime(game.elapsed);
@@ -1020,9 +1094,26 @@ function respawnLocal() {
   ui.toast("다시 돌아왔다 — 팀원은 아직 싸우고 있다", 2600);
 }
 
+// 2층 비상 해치 (최종 탈출구): 전제조건을 모두 만족해야 개방
+function tryHatch() {
+  if (game.exitPowered) {
+    noise.addImpulse(0.9, player.x, player.z, "door", player.y);
+    winGame();
+    return;
+  }
+  const miss = [];
+  if (game.collected < FUSE_TOTAL) miss.push(`차단기 ${game.collected}/${FUSE_TOTAL}`);
+  const md = missionDoneCount(), mt = (world.missionSpots || []).length;
+  if (!missionsAllDone()) miss.push(`부가 미션 ${md}/${mt}`);
+  ui.toast(`해치가 잠겨 있다 — 먼저 ${miss.join(" · ")} 완수하라`, 3000);
+  audio.blip(240, 0.14);
+}
+
 function winGame() {
   if (game.phase === "win") return;
   game.phase = "win";
+  game.menuOpen = false;
+  ui.hide(ui.pause);
   unlockPointer();
   document.getElementById("win-time").textContent = formatTime(game.elapsed);
   document.getElementById("win-noise").textContent = noise.loudCount || 0;
@@ -1180,14 +1271,24 @@ function updateObjectives(dt) {
     label = "차단기 회수";
   }
 
-  // 게이트
+  // 북문 철문 — 고장남 (승리 불가, 힌트만). 진짜 탈출구는 2층 비상 해치.
   const gd = Math.hypot(world.exit.x - player.x, world.exit.z - player.z);
-  if (game.exitPowered && gd < CONFIG.interaction.gateRange) {
+  if (gd < CONFIG.interaction.gateRange) {
     target = { type: "gate" };
-    label = "철문 열고 탈출";
+    label = "고장난 철문";
   }
 
-  const holdingE = !!eKeyDown && !game.eConsumed;
+  // 2층 비상 해치 (최종 탈출구)
+  if (world.hatch) {
+    const hd = Math.hypot(world.hatch.x - player.x, world.hatch.z - player.z);
+    const hdy = Math.abs(player.y - 4.2);
+    if (hd < CONFIG.interaction.gateRange && hdy < 2.0) {
+      target = { type: "hatch" };
+      label = game.exitPowered ? "비상 해치 개방" : "비상 해치 (잠김)";
+    }
+  }
+
+  const holdingE = !!eKeyDown && !game.eConsumed && !game.menuOpen;
   if (target && holdingE) {
     const same = game.interactTarget &&
       game.interactTarget.type === target.type &&
@@ -1225,6 +1326,14 @@ function updateObjectives(dt) {
       else if (target.type === "mission") {
         if (mpClient()) mpAct({ k: "mission", i: world.missionSpots.indexOf(target.mission) });
         else handleMission(target.mission);
+      }
+      else if (target.type === "gate") {
+        ui.toast("고장난 철문 — 삐걱거리기만 한다. 진짜 탈출구는 따로 있다.", 2800);
+        audio.blip(180, 0.15);
+      }
+      else if (target.type === "hatch") {
+        if (mpClient()) mpAct({ k: "hatch" });
+        else tryHatch();
       }
       else {
         if (mpClient()) mpAct({ k: "gate" });
@@ -1787,6 +1896,13 @@ function step(dt) {
   if (game.phase === "playing") {
     game.elapsed += dt;
 
+    // 설정 오버레이가 열려 있으면(멀티) 이동 입력을 중지한다 — 월드는 계속 굴러간다
+    if (game.menuOpen) {
+      input.forward = input.back = input.left = input.right = false;
+      input.sprint = false;
+      input.jump = false;
+      input.crouch = false;
+    }
     player.update(dt, input);
     input.jump = false; // 점프는 1프레임 펄스
     net.localHideIdx = player.hideSpot ? world.hidingSpots.indexOf(player.hideSpot) : -1;
@@ -2012,6 +2128,6 @@ ui.setFlashlight(true);
 ui.setHudVisible(false);
 
 // 디버그/테스트용 훅
-  window.__silence = { game, player, monster, get monster2() { return monster2; }, get monster2Active() { return monster2Active; }, startGame, winGame, noise, world, ui, settings, STATE, input, audio, renderer, camera, scene, THREE, DIFFICULTY, CONFIG, applyDifficulty, smokes, decoys, primaryAction, situationF, handleDigit, stowHeld, equipSlot, useSlot, keypadPress, openKeypad, closeKeypad, updateTraps, updateExitPower, missionsAllDone, missionDoneCount, net, respawnLocal, applySnapshot, buildSnapshot, buildPose, handleNetEvent, handleRemoteAct, trapGone };
+  window.__silence = { game, player, monster, get monster2() { return monster2; }, get monster2Active() { return monster2Active; }, startGame, winGame, tryHatch, noise, world, ui, settings, STATE, input, audio, renderer, camera, scene, THREE, DIFFICULTY, CONFIG, applyDifficulty, smokes, decoys, primaryAction, situationF, handleDigit, stowHeld, equipSlot, useSlot, keypadPress, openKeypad, closeKeypad, updateTraps, updateExitPower, missionsAllDone, missionDoneCount, net, respawnLocal, applySnapshot, buildSnapshot, buildPose, handleNetEvent, handleRemoteAct, trapGone };
 
 loop();
