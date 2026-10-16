@@ -1259,10 +1259,14 @@ function updateObjectives(dt) {
   if (nearDoor && doorD < CONFIG.interaction.gateRange) {
     const keyDef = getItemDef(nearDoor.keyId);
     const keyName = keyDef ? keyDef.name : "열쇠";
+    const held = game.heldSlot >= 0 ? player.inventory.slots[game.heldSlot] : null;
+    const equipped = !!(held && held.id === nearDoor.keyId && held.count > 0);
     target = { type: "lockedDoor", door: nearDoor };
-    label = player.inventory.hasKey(nearDoor.keyId)
+    label = equipped
       ? `${nearDoor.label} 열기 (${keyName})`
-      : `${nearDoor.label} — 잠김`;
+      : player.inventory.hasKey(nearDoor.keyId)
+        ? `${nearDoor.label} — 열쇠를 손에 들어라`
+        : `${nearDoor.label} — 잠김`;
   }
 
   // 퓨즈(목표물) — 은신처·잠긴 문이 겹쳐도 반드시 회수 가능해야 함
@@ -1433,19 +1437,27 @@ function handleDrawer(d, phase) {
 /* ================= 잠긴 문 ================= */
 function tryOpenDoor(door) {
   if (!door || door.open) return;
-  if (player.inventory.hasKey(door.keyId)) {
+  const keyDef = getItemDef(door.keyId);
+  const keyName = keyDef ? keyDef.name : "특정 열쇠";
+  // 손에 든 열쇠가 맞아야 열린다 (상호작용으로 장착한 열쇠 사용)
+  const held = game.heldSlot >= 0 ? player.inventory.slots[game.heldSlot] : null;
+  if (held && held.id === door.keyId && held.count > 0) {
     // 열쇠는 소모하지 않음 — 문 개방만
     openDoor(door);
     return;
   }
-  const keyDef = getItemDef(door.keyId);
+  if (player.inventory.hasKey(door.keyId)) {
+    ui.toast(`${keyName}를 손에 들어라 (인벤토리 숫자키)`, 2600);
+    audio.blip(240, 0.14);
+    return;
+  }
   if (door.code) {
     // 열쇠 없음 → 비밀번호 키패드 (NOTE_SHED에 힌트)
-    ui.toast(`열쇠 없음 — 비밀번호를 입력하라 (${keyDef ? keyDef.name : "특정 열쇠"})`, 2600);
+    ui.toast(`열쇠 없음 — 비밀번호를 입력하라 (${keyName})`, 2600);
     openKeypad(door);
     return;
   }
-  ui.toast(`이 문에 맞는 열쇠가 필요하다. (${keyDef ? keyDef.name : "특정 열쇠"})`, 2400);
+  ui.toast(`이 문에 맞는 열쇠가 필요하다. (${keyName})`, 2400);
   audio.blip(240, 0.14);
 }
 
@@ -1620,8 +1632,11 @@ function handleDigit(i) {
   const slot = player.inventory.slots[i];
   if (!slot || slot.count <= 0) return;
   const def = getItemDef(slot.id);
-  if (def && (def.kind === "use" || def.kind === "trap" || def.kind === "stun")) {
-    if (game.heldSlot === i) useSlot(i);
+  if (def && (def.kind === "use" || def.kind === "trap" || def.kind === "stun" || def.kind === "key")) {
+    if (game.heldSlot === i) {
+      if (def.kind === "key") stowHeld();
+      else useSlot(i);
+    }
     else equipSlot(i);
   } else {
     useSlot(i);
