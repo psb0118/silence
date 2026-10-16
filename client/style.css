@@ -562,6 +562,11 @@ body.touch-mode #touch-ui.hidden { display: none; }
   margin: -26px 0 0 -26px; border-radius: 50%;
   background: rgba(255,255,255,0.28);
 }
+#touch-hint {
+  position: absolute; left: 26px; bottom: 62px; width: 120px;
+  text-align: center; font-size: 11px; color: rgba(255,255,255,0.55);
+  pointer-events: none;
+}
 #touch-btns {
   position: fixed; right: 12px; bottom: 86px; z-index: 41;
   display: flex; flex-direction: column; gap: 8px;
@@ -571,6 +576,7 @@ body.touch-mode #touch-ui.hidden { display: none; }
   border: 1px solid rgba(255,255,255,0.25);
   background: rgba(10,16,24,0.55); color: #e7edf3; font-size: 14px;
   touch-action: none; user-select: none; -webkit-user-select: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .touch-btn.big { height: 68px; font-size: 17px; font-weight: 700; border-color: rgba(240,181,106,0.6); }
 .touch-btn:active { background: rgba(240,181,106,0.35); }

@@ -929,8 +929,8 @@ export class Monster {
   _safeTarget(t) {
     if (!t) return t;
     if (this.world.inSafeZone(t.x, t.z)) {
-      const c = this.world.clampOutOfSafeZone(t.x, t.z, 1.5);
-      return { x: c.x, z: c.z };
+      const c = this.world.clampOutOfSafeZone(t.x, t.z);
+      return { x: c.x, z: c.z, y: t.y };
     }
     return t;
   }
@@ -1322,8 +1322,10 @@ export class Monster {
       node = came[node];
     }
     path.reverse();
-    if (path.length === 0) path.push({ x: tx, z: tz });
-    else path[path.length - 1] = { x: tx, z: tz };
+    // 목표 도달(best === ti)일 때만 마지막 점을 목표 좌표로 스냅.
+    // 도달 실패 시 강제 스냅은 벽뚫기 직진이 되므로, 가장 가까운 도달 가능 셀에서 멈춘다.
+    if (path.length === 0) path.push(g.cellCenter(best));
+    else if (best === ti) path[path.length - 1] = { x: tx, z: tz };
     return path;
   }
 

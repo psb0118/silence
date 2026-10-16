@@ -1733,6 +1733,27 @@ export class World {
     this._drawer(23.5, 25, Math.PI, "battery", "예비 배터리", DT);
     this._drawer(21.8, 28.5, 0, "smoke", "연막탄", DT);
     this._lamp(22, 26, 0x9fd0ff, 12, 17, DT);
+    // 벽 캐비닛 (북벽) — 통로 셀과 4m 이상 분리 확인
+    this._cabinet(22, 21.6, 0, DT);
+    // 러그·천장 들보·책상 소품 (시각 전용, 충돌 없음)
+    const rug = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.04, 2.4),
+      new THREE.MeshStandardMaterial({ color: 0x4a2e2e, roughness: 1 }));
+    rug.position.set(22, DT + 0.02, 26); rug.receiveShadow = true;
+    this.scene.add(rug);
+    const beamMat = new THREE.MeshStandardMaterial({ color: 0x2c3138, roughness: 0.8 });
+    for (const bz of [23.5, 28.5]) {
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(8.4, 0.35, 0.3), beamMat);
+      beam.position.set(22, DT + 2.6, bz); beam.castShadow = true;
+      this.scene.add(beam);
+    }
+    const docMat = new THREE.MeshStandardMaterial({ color: 0xd8d0b8, roughness: 0.95 });
+    const doc1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.02, 0.4), docMat);
+    doc1.position.set(24.3, DT + 0.83, 26.8); doc1.rotation.y = 0.4;
+    this.scene.add(doc1);
+    const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.09, 8),
+      new THREE.MeshStandardMaterial({ color: 0x7a2a2a, roughness: 0.6 }));
+    mug.position.set(24.8, DT + 0.87, 27.3);
+    this.scene.add(mug);
 
     // ---- 비상 해치 (동벽 앞 위장 캐비닛 + 상태 램프 + 안내판 + 케이블) ----
     const hx = 25.2, hz = 22.5;

@@ -9,7 +9,7 @@ import { Monster, STATE } from "./monster.js";
 import { UI } from "./ui.js";
 import { getItemDef } from "./inventory.js";
 import { net } from "./net.js";
-import { setupTouch, touchState, isTouchDevice } from "./touch.js";
+import { setupTouch, touchState, isTouchDevice, setTouchAction } from "./touch.js";
 
 /* ================= 설정 ================= */
 const settings = Object.assign(
@@ -1357,12 +1357,29 @@ function updateObjectives(dt) {
   if (player.hidden) ui.showInteract("숨기에서 나오기 (E)", 0);
   else if (target) ui.showInteract(label, game.interactHold);
   else ui.hideInteract();
+  setTouchAction(player.hidden ? "나오기" : touchActionFor(target));
 
   // 목표 텍스트
   if (game.exitPowered) {
-    ui.setObjective("격리 철문으로 탈출하라", game.collected, FUSE_TOTAL, null);
+    ui.setObjective("2층 감시탑 비상 해치로 탈출하라", game.collected, FUSE_TOTAL, null);
   } else {
-    ui.setObjective(`차단기 ${FUSE_TOTAL}개를 찾아 전원을 복구하세요`, game.collected, FUSE_TOTAL, nearest ? nd : null);
+    ui.setObjective(`차단기 ${FUSE_TOTAL}개 + 부가 미션 ${world.missionSpots.length}개를 모두 완수하세요`, game.collected, FUSE_TOTAL, nearest ? nd : null);
+  }
+}
+
+function touchActionFor(target) {
+  if (!target) return null;
+  switch (target.type) {
+    case "drawer":
+      return target.phase === "take" ? "줍기" : target.phase === "close" ? "닫기" : "열기";
+    case "fuse": return "회수";
+    case "mission":
+      return target.mission.kind === "scout" ? "기록" : target.mission.kind === "beacon" ? "정지" : "수거";
+    case "lockedDoor": return "문 열기";
+    case "hatch": return game.exitPowered ? "탈출" : "해치";
+    case "gate": return "확인";
+    case "hide": return "숨기";
+    default: return "확인";
   }
 }
 
@@ -2160,8 +2177,8 @@ setupTouch({
   },
   onF: () => { if (game.phase === "playing" && !game.menuOpen && !game.keypad) situationF(); },
   onMap: () => { if (game.phase === "playing") toggleMinimap(); },
-  onJump: () => { if (game.phase === "playing" && !game.menuOpen) input.jump = true; },
-  onCrouchToggle: () => { if (game.phase === "playing") input.crouch = !input.crouch; },
+  onSwipeJump: () => { if (game.phase === "playing" && !game.menuOpen) input.jump = true; },
+  onSwipeCrouch: () => { if (game.phase === "playing") input.crouch = !input.crouch; },
   onSlot: (i) => { if (game.phase === "playing" && !game.menuOpen && !game.keypad) handleDigit(i); },
 });
 const touchUI = document.getElementById("touch-ui");
