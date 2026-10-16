@@ -270,6 +270,9 @@ export class Monster {
 
   /* ================= 상태 전환 ================= */
   _setState(s) {
+    // 피격 후 진짜 회복 중에는 어떤 전이도 받지 않는다 (약 5초 보장).
+    // 시간 만료 시 RECOVER 케이스가 _recoverFor를 지우고 내보낸다.
+    if (this.state === STATE.RECOVER && this._recoverFor && s !== STATE.RECOVER) return;
     if (this.state === s) return;
     const prev = this.state;
     const wasChase = prev === STATE.CHASE || prev === STATE.ATTACK;
@@ -358,13 +361,15 @@ export class Monster {
     return false;
   }
 
-  // 비치명 피격 후: 추적자를 수색으로 돌려 플레이어가 도망칠 시간을 준다
+  // 피격 후: 약 5초간 진짜 회복 상태 (추격·공격 불가) 후 수색으로 복귀.
+  // 비치명 피격·원격 피격 모두 여기서 처리한다.
   forceRecover() {
     this._caught = false;
     this._attackPhase = 0;
     this.lostTimer = 0;
     this.suspicion = Math.min(this.suspicion, 0.6);
-    this._grace = 2.4; // 이 시간 동안은 목격/소음으로도 즉시 추격하지 않음
+    this._recoverFor = 5.0;
+    this._grace = 5.0; // 이 시간 동안은 목격/소음으로도 즉시 추격하지 않음
     this._setState(STATE.RECOVER);
   }
 
@@ -753,7 +758,9 @@ export class Monster {
       case STATE.RECOVER: {
         speed = 0;
         faceTarget = this.lastKnownValid ? this.lastKnown : null;
-        if (this.stateTime > cfg.recoverTime) {
+        const recT = (this._recoverFor !== undefined && this._recoverFor !== null) ? this._recoverFor : cfg.recoverTime;
+        if (this.stateTime > recT) {
+          this._recoverFor = null;
           this._setState(sees ? STATE.CHASE : STATE.SEARCH);
         }
         break;
@@ -780,9 +787,10 @@ export class Monster {
       this.yaw = angleLerp(this.yaw, desired, clamp(cfg.turnLerp * 0.6 * dt, 0, 1));
     }
 
-    // 잡기 판정 (안전지대 밖, 은신 중 아닌 경우에만 즉시) — 벽 너머(다른 방)·다른 층에서는 못 잡음
+    // 잡기 판정 (안전지대 밖, 은신 중 아닌 경우에만 즉시) — 벽 너머(다른 방)·다른 층·회복 중에는 못 잡음
     const pyCatch = player.y !== undefined ? player.y : this.world.heightAt(player.x, player.z);
-    if (!playerSafe && !player.hidden && !this._caught && dToPlayer < cfg.catchRadius &&
+    const recovering = this.state === STATE.RECOVER && !!this._recoverFor;
+    if (!recovering && !playerSafe && !player.hidden && !this._caught && dToPlayer < cfg.catchRadius &&
         Math.abs(pyCatch - this.y) <= 2.5 &&
         !this.world.lineBlocked(this.x, this.z, player.x, player.z, this.y + 1.6, pyCatch + 1.6) && this.onCatch) {
       this._caught = true;
@@ -908,14 +916,14 @@ export class Monster {
     } else {
       this.moveSpeedActual = 0;
     }
-    if (!playerSafe && !player.hidden && !this._caught && d < cfg.catchRadius && this._attackPhase > cfg.attackWindup &&
+    if (!(this.state === STATE.RECOVER && !!this._recoverFor) && !playerSafe && !player.hidden && !this._caught && d < cfg.catchRadius && this._attackPhase > cfg.attackWindup &&
         Math.abs((player.y !== undefined ? player.y : this.y) - this.y) <= 2.5 &&
         !this.world.lineBlocked(this.x, this.z, player.x, player.z, this.y + 1.6, (player.y !== undefined ? player.y : this.y) + 1.6) && this.onCatch) {
       this._caught = true;
       this._lastCatchTime = this.time;
       this.onCatch();
     }
-    if (this._attackPhase > cfg.attackTime) this._setState(STATE.RECOVER);
+    if (this._attackPhase > cfg.attackTime) { this._recoverFor = null; this._setState(STATE.RECOVER); }
   }
 
   _safeTarget(t) {
@@ -1350,6 +1358,7 @@ export class Monster {
     this._boundaryTarget = null;
     this._wasHidden = false;
     this._grace = 0;
+    this._recoverFor = null;
     this.chasing = false;
     this.attackAnim = 0;
     this._lastStep = -1;

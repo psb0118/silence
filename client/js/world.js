@@ -1780,9 +1780,10 @@ export class World {
     this.scene.add(beam);
     this.hatch = { x: hx - 0.9, z: hz };
 
-    // ---- 미니맵 등록 (2층 홀) ----
+    // ---- 미니맵 등록 (2층 홀 + 계단실 + 1층 창고) ----
     this.rooms.push({ x: (T.divX + T.x1) / 2, z: (T.z0 + T.z1) / 2, w: T.x1 - T.divX, d: T.z1 - T.z0, name: "2층 관측실", y: DT });
-    this.rooms.push({ x: (T.x0 + T.divX) / 2, z: (T.z0 + T.z1) / 2, w: T.divX - T.x0, d: T.z1 - T.z0, name: "계단실", y: 0 });
+    this.rooms.push({ x: (T.x0 + T.divX) / 2, z: (T.z0 + T.z1) / 2, w: T.divX - T.x0, d: T.z1 - T.z0, name: "계단실", y: 0, both: true });
+    this.rooms.push({ x: (T.divX + T.x1) / 2, z: (T.z0 + T.z1) / 2, w: T.x1 - T.divX, d: T.z1 - T.z0, name: "탑 창고", y: 0 });
   }
 
   /* ---------- 야외 소품 (외벽에 붙여 배치 — 시야를 새로 가리지 않음) ---------- */
@@ -1906,28 +1907,34 @@ export class World {
   }
 
   setExitPowered(powered) {
-    if (powered) {
-      this.exitIndicatorMat.color.setHex(0x66ff99);
-      this.exitIndicatorMat.emissive.setHex(0x22cc66);
-      this.exitIndicatorMat.emissiveIntensity = 2.0;
-      this._drawExitSign(true);
-      if (this.gate && !this.gate.open) {
-        this.gate.open = true;
-        this.boxes = this.boxes.filter((b) => b !== this._gateDoorBox);
-        this.gate.door.visible = false;
+    // 북문 철문은 고장 — 전원이 들어와도 열리지 않는다 (장식·붉은 경고 유지).
+    // 진짜 탈출구는 2층 비상 해치 (초록 램프 + 빔).
+    if (this.hatchLampMat) {
+      if (powered) {
+        this.hatchLampMat.color.setHex(0x66ff99);
+        this.hatchLampMat.emissive.setHex(0x22cc66);
+        this.hatchLampMat.emissiveIntensity = 2.4;
+      } else {
+        this.hatchLampMat.color.setHex(0xff4444);
+        this.hatchLampMat.emissive.setHex(0xaa1111);
+        this.hatchLampMat.emissiveIntensity = 2.0;
       }
-    } else {
-      this.exitIndicatorMat.color.setHex(0xff5555);
-      this.exitIndicatorMat.emissive.setHex(0x661111);
-      this.exitIndicatorMat.emissiveIntensity = 1.2;
-      this._drawExitSign(false);
-      // 게이트 닫기 복원 (이전에는 open 상태가 유지되어 재시작 시 문이 열려 있었음)
-      if (this.gate && this.gate.open) {
-        this.gate.open = false;
-        this.gate.door.visible = true;
-        if (this._gateDoorBox && !this.boxes.includes(this._gateDoorBox)) {
-          this.boxes.push(this._gateDoorBox);
-        }
+    }
+    if (this.hatchBeamMat) {
+      if (powered) {
+        this.hatchBeamMat.color.setHex(0x44ff88);
+        this.hatchBeamMat.opacity = 0.22;
+      } else {
+        this.hatchBeamMat.color.setHex(0xff4444);
+        this.hatchBeamMat.opacity = 0.08;
+      }
+    }
+    // 북문 게이트는 항상 닫힘 유지 (재시작 복원 포함)
+    if (this.gate && this.gate.open) {
+      this.gate.open = false;
+      this.gate.door.visible = true;
+      if (this._gateDoorBox && !this.boxes.includes(this._gateDoorBox)) {
+        this.boxes.push(this._gateDoorBox);
       }
     }
   }

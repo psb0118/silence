@@ -211,12 +211,13 @@ export class UI {
     const w = this._w, p = this._p, m = this._m, c = this.minimapCtx;
     if (!c || !this.minimap || !w || !p) return;
     const W = this.minimap.width, H = this.minimap.height, PAD = 14;
-    // 확장된 시설 전체를 담는 경계 (게이트 북쪽 포함)
-    const X0 = -50, X1 = 50, Z0 = -66, Z1 = 30;
+    // 확장된 시설 전체를 담는 경계 (게이트 북쪽 + 남측 감시탑 포함)
+    const X0 = -50, X1 = 50, Z0 = -66, Z1 = 33;
     const sx = (W - PAD * 2) / (X1 - X0);
     const sy = (H - PAD * 2) / (Z1 - Z0);
     const mx = (x) => PAD + (x - X0) * sx;
     const mz = (z) => PAD + (z - Z0) * sy;
+    const level = (p.y || 0) >= 2.5 ? 1 : 0;
 
     // 배경
     c.fillStyle = "rgba(5,10,16,0.86)";
@@ -224,8 +225,8 @@ export class UI {
     c.strokeStyle = "#2a3f55"; c.lineWidth = 1;
     c.strokeRect(0.5, 0.5, W - 1, H - 1);
 
-    // 맵 구조만 표시: 외곽 마당 밴드 + 방 + 벽 + 플레이어
-    // (아이템·미션·괴물·출구 등은 표시하지 않는다 — 명세: 자신의 모습과 맵의 구조만)
+    // 맵 구조만 표시: 외곽 마당 밴드 + 방 + 벽 + 플레이어 + 미션/계단/해치 마커
+    // (괴물의 현재·추정·최종목격 위치는 절대 표시하지 않는다)
 
     // 시설 외곽(마당) 영역
     c.fillStyle = "rgba(50,70,92,0.14)";
@@ -237,8 +238,10 @@ export class UI {
     c.fillRect(mx(w.compound.OX0), mz(-30), mx(w.compound.OX1) - mx(w.compound.OX0), mz(-26) - mz(-30));
     c.fillRect(mx(w.compound.OX0), mz(-4), mx(w.compound.OX1) - mx(w.compound.OX0), mz(0) - mz(-4));
 
-    // 방
+    // 방 (현재 층만)
     if (w.rooms) for (const r of w.rooms) {
+      const ry = r.y || 0;
+      if (!r.both && ((ry >= 2.5) !== (level === 1))) continue;
       const x0 = mx(r.x - r.w / 2), y0 = mz(r.z - r.d / 2);
       const x1 = mx(r.x + r.w / 2), y1 = mz(r.z + r.d / 2);
       c.fillStyle = "rgba(18,30,44,0.92)";
@@ -247,13 +250,36 @@ export class UI {
       c.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0 - 1, y1 - y0 - 1);
     }
 
-    // 벽
+    // 벽 (현재 층과 수직으로 겹치는 것만)
     c.strokeStyle = "#55758f"; c.lineWidth = 2; c.beginPath();
     if (w.walls) for (const wall of w.walls) {
+      const wy0 = (wall.y0 === undefined || wall.y0 === null) ? -Infinity : wall.y0;
+      const wy1 = (wall.y1 === undefined || wall.y1 === null) ? Infinity : wall.y1;
+      const band0 = level === 0 ? -3 : 2.5, band1 = level === 0 ? 2.5 : 8.5;
+      if (wy0 >= band1 || wy1 <= band0) continue;
       c.moveTo(mx(wall.x0), mz(wall.z0));
       c.lineTo(mx(wall.x1), mz(wall.z1));
     }
     c.stroke();
+
+    // 부가 미션 마커 (미완만 — 종류별 색)
+    if (w.missionSpots) for (const s of w.missionSpots) {
+      if (s.done) continue;
+      c.fillStyle = s.kind === "scout" ? "#5ad0ff" : s.kind === "beacon" ? "#ff6a6a" : "#ffb347";
+      c.beginPath(); c.arc(mx(s.x), mz(s.z), 2.5, 0, Math.PI * 2); c.fill();
+    }
+
+    // 계단 마커 (감시탑) — 항상 표시
+    c.fillStyle = "#f0b56a"; c.font = "bold 10px sans-serif";
+    c.fillText(level === 0 ? "▲2F" : "▼1F", mx(16) - 8, mz(26));
+
+    // 비상 해치 마커 (전원 후만)
+    if (w.hatch && w.hatchBeamMat && w.hatchBeamMat.color.getHex() === 0x44ff88) {
+      c.fillStyle = "#44ff88";
+      c.beginPath(); c.arc(mx(w.hatch.x), mz(w.hatch.z), 3.5, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = "#44ff88"; c.lineWidth = 1;
+      c.beginPath(); c.arc(mx(w.hatch.x), mz(w.hatch.z), 6, 0, Math.PI * 2); c.stroke();
+    }
 
     // 플레이어 (전방 화살표)
     if (p) {
@@ -266,9 +292,11 @@ export class UI {
       c.beginPath(); c.arc(cxp, czp, 3, 0, Math.PI * 2); c.fill();
     }
 
-    // 북쪽 + 범례
+    // 북쪽 + 범례 + 층 표시
     c.fillStyle = "#6b8ba6"; c.font = "9px sans-serif";
     c.fillText("N", mx(0) - 3, mz(w.compound.OZ0) - 5);
+    c.fillStyle = "#f0b56a";
+    c.fillText(level === 0 ? "1F" : "2F", W - 24, 16);
     c.fillStyle = "#4a6b86";
     c.fillText("M - 닫기", W - 58, H - 8);
   }

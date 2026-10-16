@@ -366,7 +366,8 @@ export const net = {
       if (!p || id === this.myId) { if (r.group) r.group.visible = false; continue; }
       r.group.position.x += (p.x - r.group.position.x) * k;
       r.group.position.z += (p.z - r.group.position.z) * k;
-      const gy = this.world ? this.world.heightAt(r.group.position.x, r.group.position.z) : 0;
+      const gy = (p.y !== undefined && p.y !== null) ? p.y
+        : (this.world ? this.world.heightAt(r.group.position.x, r.group.position.z) : 0);
       r.group.position.y += (gy - r.group.position.y) * Math.min(1, dt * 10);
       r.group.rotation.y = angleLerp(r.group.rotation.y, p.yaw || 0, k);
       r.body.scale.y = p.crouch ? 0.66 : 1;
@@ -410,7 +411,7 @@ export const net = {
     if (!r) return null;
     if (!r.synth) {
       r.synth = {
-        x: 0, z: 0, yaw: 0, pitch: 0, hidden: false, hideSpot: null, inSafeZone: false, dead: false,
+        x: 0, z: 0, y: 0, yaw: 0, pitch: 0, hidden: false, hideSpot: null, inSafeZone: false, dead: false,
         _netId: id,
         exitHide: () => {
           const rr = this.remotes.get(id);
@@ -426,6 +427,7 @@ export const net = {
     const p = r.pose;
     const s = r.synth;
     s.x = p.x; s.z = p.z; s.yaw = p.yaw || 0; s.pitch = p.pitch || 0;
+    s.y = (p.y !== undefined && p.y !== null) ? p.y : 0;
     s.hidden = !!p.hidden;
     s.dead = !!p.dead;
     s.inSafeZone = !!p.safe;
